@@ -1,0 +1,30 @@
+# Example .tf-review.yml. Drop this at the root of a Terraform repo to
+# extend the built-in tf-review-mcp rules without forking.
+version: 1
+
+# Add resource types to the built-in HIGH_RISK_TYPES list. These will be
+# flagged as `warn` when created, updated, or replaced.
+extra_high_risk_types:
+  - cloudflare_record
+  - vault_policy
+  - github_repository
+
+# Add resource types to the built-in STATEFUL_TYPES list. These will be
+# flagged as `blocker` when deleted or replaced.
+extra_stateful_types:
+  - mongodbatlas_cluster
+
+# Extra CIDRs treated as "public exposure" for google_compute_firewall
+# changes. The built-in list is 0.0.0.0/0 and ::/0.
+extra_public_cidrs:
+  - "10.0.0.0/8"
+
+# Override cost-delta thresholds (USD per month).
+cost_thresholds:
+  info_usd: 50
+  warn_usd: 250
+  blocker_usd: 1500
+
+# Suppress specific rules entirely. Known rule ids:
+#   high-risk, stateful-destroy, public-exposure, cost-delta
+disabled_rules: []

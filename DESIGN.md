@@ -58,6 +58,8 @@ Worth doing only if a team finds the local v1 useful and wants to enforce the sa
   |                    build ReviewSummary. No I/O beyond reading the plan file.
   +-- cost.py          Pure functions. Wraps the Infracost CLI as a subprocess
   |                    and parses its JSON output into a CostSummary.
+  +-- config.py        ReviewConfig dataclass + built-in defaults + YAML
+  |                    discovery (TF_REVIEW_CONFIG / cwd / walk-up).
   +-- __init__.py
 ```
 
@@ -132,6 +134,37 @@ Implementation notes:
 - Thresholds are hardcoded in v0.3.0 (`$100` info, `$500` warn, `$1000` blocker). The upcoming YAML config makes them per-team.
 - The module is pure Python with no MCP imports, so it can be reused from CI or a CLI.
 
+### `get_active_config() -> str`
+
+Returns the merged `ReviewConfig` (built-in defaults + any
+`.tf-review.yml` overrides). Includes the `source_path` field so the
+caller can tell where the config came from. Returns defaults with an
+`error` field when YAML validation fails, so the server never crashes
+on a malformed config.
+
+## Configuration
+
+`ReviewConfig` owns all classification lists (`high_risk_types`,
+`stateful_types`, `public_cidrs`), the cost-delta thresholds, and the
+set of disabled rules. Both `review.py` and `cost.py` consume it as an
+optional argument; passing `None` uses the built-in defaults.
+
+Schema is small, hand-validated, versioned (`version: 1`), and extends
+defaults rather than replacing them. Unknown keys, unknown rule ids,
+and unsupported versions raise `ConfigError`. Empty files are valid and
+fall through to defaults.
+
+Discovery order:
+
+1. `TF_REVIEW_CONFIG=/abs/path` env var.
+2. `.tf-review.yml` in the current working directory.
+3. Walk up parent directories to the filesystem root.
+4. Built-in defaults.
+
+The server re-discovers config on each tool call. This keeps edits to
+`.tf-review.yml` live without a restart and is cheap (at most a few
+`stat` calls).
+
 ### Future tools
 
 - `check_policy(plan_json_path, policy_dir)` — shell out to Conftest, return violations.
@@ -193,7 +226,7 @@ I have not found a published MCP server scoped specifically to plan review with 
 1. **v0.1 (done):** `review_plan`, `suggest_review_comments`, stdio transport, fixture-backed tests.
 2. **v0.2 (done):** GCP coverage (Cloud DNS, GCE firewalls, GKE node pools, IAM bindings), `google_compute_instance` replace as stateful destroy, diff-aware public-exposure check for `google_compute_firewall`.
 3. **v0.3.0 (done):** `estimate_cost_delta` (wraps Infracost CLI), structured error handling for missing binary / timeout / non-zero exit.
-4. **v0.3.1:** `.tf-review.yml` config file for custom high-risk types, exposure CIDRs, and cost thresholds.
+4. **v0.3.1 (done):** `.tf-review.yml` config file for custom high-risk types, exposure CIDRs, and cost thresholds. New `get_active_config` tool for introspection.
 5. **v0.4:** `check_policy` (wrap Conftest), `diff_resource` for drilling in, more diff-aware checks (SG ingress, IAM `*` grants, GCS `force_destroy`).
 6. **v0.5:** HTTP transport behind an internal token for CI use.
 7. **v1.0:** stable tool contracts, semver guarantees, packaged for pipx/Homebrew.

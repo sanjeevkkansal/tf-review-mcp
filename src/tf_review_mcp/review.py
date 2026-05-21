@@ -3,74 +3,19 @@
 Parses the JSON output of `terraform show -json plan.out` and produces a
 structured review focused on blast radius. Pure functions, no I/O beyond
 reading the plan file.
+
+Classifications (high-risk types, stateful types, public CIDRs) are owned
+by `config.py`. Pass a `ReviewConfig` to override built-in defaults.
 """
 
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-# Resource types that are stateful or carry high blast radius when destroyed
-# or modified. Conservative list. Extend per-org policy as needed.
-HIGH_RISK_TYPES: set[str] = {
-    # AWS
-    "aws_db_instance",
-    "aws_rds_cluster",
-    "aws_rds_cluster_instance",
-    "aws_dynamodb_table",
-    "aws_s3_bucket",
-    "aws_kms_key",
-    "aws_iam_role",
-    "aws_iam_policy",
-    "aws_iam_user",
-    "aws_security_group",
-    "aws_security_group_rule",
-    "aws_route53_zone",
-    "aws_route53_record",
-    "aws_vpc",
-    "aws_subnet",
-    "aws_eks_cluster",
-    "aws_elasticache_cluster",
-    "aws_elasticache_replication_group",
-    # GCP
-    "google_sql_database_instance",
-    "google_container_cluster",
-    "google_container_node_pool",
-    "google_kms_crypto_key",
-    "google_project_iam_member",
-    "google_project_iam_binding",
-    "google_storage_bucket",
-    "google_compute_firewall",
-    "google_dns_managed_zone",
-    "google_dns_record_set",
-    # Azure
-    "azurerm_sql_server",
-    "azurerm_kubernetes_cluster",
-    "azurerm_key_vault",
-}
-
-# Stateful resources where a destroy or replace is almost always a mistake
-# without an explicit migration plan. google_compute_instance is included
-# because many users attach local SSDs and rely on boot-disk persistence;
-# a replace nukes both.
-STATEFUL_TYPES: set[str] = {
-    "aws_db_instance",
-    "aws_rds_cluster",
-    "aws_dynamodb_table",
-    "aws_s3_bucket",
-    "aws_elasticache_cluster",
-    "aws_elasticache_replication_group",
-    "google_sql_database_instance",
-    "google_storage_bucket",
-    "google_compute_instance",
-    "azurerm_sql_server",
-}
-
-# IP ranges that represent unrestricted public exposure when added to a
-# firewall's source_ranges.
-PUBLIC_CIDRS: set[str] = {"0.0.0.0/0", "::/0"}
+from .config import ReviewConfig, default_config
 
 
 @dataclass
@@ -103,16 +48,17 @@ class ReviewSummary:
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
-        # Flatten nested dataclasses for JSON cleanliness
         d["high_risk_changes"] = [asdict(c) for c in self.high_risk_changes]
         d["stateful_destroys"] = [asdict(c) for c in self.stateful_destroys]
         d["public_exposure_changes"] = [asdict(c) for c in self.public_exposure_changes]
         return d
 
 
-def _firewall_exposure_finding(rc: dict[str, Any]) -> str | None:
+def _firewall_exposure_finding(
+    rc: dict[str, Any], public_cidrs: frozenset[str]
+) -> str | None:
     """Return a finding string if a google_compute_firewall change widens
-    public exposure (adds 0.0.0.0/0 or ::/0 to source_ranges), else None.
+    public exposure (adds a CIDR from `public_cidrs` to source_ranges), else None.
 
     Fires on create + update + replace. Does not fire on delete.
     """
@@ -123,7 +69,7 @@ def _firewall_exposure_finding(rc: dict[str, Any]) -> str | None:
     after = change.get("after") or {}
     before_ranges = set(before.get("source_ranges") or [])
     after_ranges = set(after.get("source_ranges") or [])
-    newly_public = (after_ranges & PUBLIC_CIDRS) - before_ranges
+    newly_public = (after_ranges & public_cidrs) - before_ranges
     if newly_public:
         return (
             f"source_ranges now includes {', '.join(sorted(newly_public))} "
@@ -131,8 +77,6 @@ def _firewall_exposure_finding(rc: dict[str, Any]) -> str | None:
         )
     added = after_ranges - before_ranges
     if added and not before_ranges:
-        # Brand-new firewall with non-public ranges. Worth noting only if any
-        # range is broad enough to matter; skip for now to avoid noise.
         return None
     if added:
         return f"source_ranges widened: added {', '.join(sorted(added))}"
@@ -164,8 +108,16 @@ def _classify_actions(actions: list[str]) -> str:
     return ",".join(sorted(s))
 
 
-def review_plan_json(plan: dict[str, Any]) -> ReviewSummary:
+def review_plan_json(
+    plan: dict[str, Any], config: ReviewConfig | None = None
+) -> ReviewSummary:
     """Build a ReviewSummary from a parsed Terraform plan JSON object."""
+    cfg = config or default_config()
+
+    high_risk_disabled = cfg.is_rule_disabled("high-risk")
+    stateful_disabled = cfg.is_rule_disabled("stateful-destroy")
+    exposure_disabled = cfg.is_rule_disabled("public-exposure")
+
     resource_changes = plan.get("resource_changes") or []
     counts: dict[str, int] = {}
     high_risk: list[ResourceChange] = []
@@ -184,8 +136,10 @@ def review_plan_json(plan: dict[str, Any]) -> ReviewSummary:
 
         rtype = rc.get("type") or ""
         address = rc.get("address") or ""
-        is_high_risk = rtype in HIGH_RISK_TYPES
-        is_stateful_destroy = rtype in STATEFUL_TYPES and bucket in {"delete", "replace"}
+        is_high_risk = rtype in cfg.high_risk_types
+        is_stateful_destroy = (
+            rtype in cfg.stateful_types and bucket in {"delete", "replace"}
+        )
 
         if is_high_risk or is_stateful_destroy:
             entry = ResourceChange(
@@ -195,21 +149,22 @@ def review_plan_json(plan: dict[str, Any]) -> ReviewSummary:
                 is_high_risk=is_high_risk,
                 is_stateful_destroy=is_stateful_destroy,
             )
-            if is_high_risk:
+            if is_high_risk and not high_risk_disabled:
                 high_risk.append(entry)
-            if is_stateful_destroy:
+            if is_stateful_destroy and not stateful_disabled:
                 stateful_destroys.append(entry)
 
-        finding = _firewall_exposure_finding(rc)
-        if finding is not None:
-            public_exposure.append(
-                ExposureChange(
-                    address=address,
-                    type=rtype,
-                    actions=actions,
-                    finding=finding,
+        if not exposure_disabled:
+            finding = _firewall_exposure_finding(rc, cfg.public_cidrs)
+            if finding is not None:
+                public_exposure.append(
+                    ExposureChange(
+                        address=address,
+                        type=rtype,
+                        actions=actions,
+                        finding=finding,
+                    )
                 )
-            )
 
     notes: list[str] = []
     if stateful_destroys:
@@ -226,6 +181,11 @@ def review_plan_json(plan: dict[str, Any]) -> ReviewSummary:
         notes.append(f"{counts['delete']} resource(s) will be destroyed.")
     if total == 0:
         notes.append("Plan is a no-op. Nothing to apply.")
+    if cfg.disabled_rules:
+        notes.append(
+            f"{len(cfg.disabled_rules)} rule(s) disabled via config: "
+            f"{', '.join(sorted(cfg.disabled_rules))}."
+        )
 
     return ReviewSummary(
         counts=counts,
@@ -238,11 +198,13 @@ def review_plan_json(plan: dict[str, Any]) -> ReviewSummary:
     )
 
 
-def review_plan_file(path: str | Path) -> ReviewSummary:
+def review_plan_file(
+    path: str | Path, config: ReviewConfig | None = None
+) -> ReviewSummary:
     """Load a plan JSON file from disk and review it."""
     p = Path(path).expanduser()
     if not p.exists():
         raise FileNotFoundError(f"Plan file not found: {p}")
     with p.open() as f:
         plan = json.load(f)
-    return review_plan_json(plan)
+    return review_plan_json(plan, config=config)

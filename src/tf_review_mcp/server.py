@@ -10,10 +10,24 @@ import json
 
 from mcp.server.fastmcp import FastMCP
 
+from .config import ConfigError, ReviewConfig, default_config, load_config
 from .cost import CostSummary, estimate_cost_delta_from_plan
 from .review import review_plan_file
 
 mcp = FastMCP("tf-review-mcp")
+
+
+def _active_config() -> ReviewConfig:
+    """Load the active config lazily so tests and tools see fresh state.
+
+    Discovery runs on every call (cheap: stat at most a few dirs). If YAML
+    parsing fails, fall back to defaults and surface the reason via the
+    `get_active_config` tool rather than crashing the server.
+    """
+    try:
+        return load_config()
+    except ConfigError:
+        return default_config()
 
 
 @mcp.tool()
@@ -28,8 +42,11 @@ def review_plan(plan_json_path: str) -> str:
     Returns a structured JSON summary covering action counts, high-blast-radius
     resource changes (IAM, security groups, RDS, KMS, etc.), and any stateful
     destroys that warrant explicit review.
+
+    Built-in classifications can be extended via `.tf-review.yml`; use
+    `get_active_config` to see the merged config.
     """
-    summary = review_plan_file(plan_json_path)
+    summary = review_plan_file(plan_json_path, config=_active_config())
     return json.dumps(summary.to_dict(), indent=2)
 
 
@@ -41,7 +58,7 @@ def suggest_review_comments(plan_json_path: str) -> str:
     the structured review. The model is expected to refine wording before
     posting; this tool only surfaces what to comment on.
     """
-    summary = review_plan_file(plan_json_path)
+    summary = review_plan_file(plan_json_path, config=_active_config())
     comments: list[dict[str, str]] = []
     flagged: set[str] = set()
 
@@ -118,13 +135,35 @@ def estimate_cost_delta(plan_json_path: str) -> str:
       - notes: human-readable strings, e.g., "Estimated monthly cost
         increase of $612.40 exceeds $500."
 
+    Thresholds default to $100/$500/$1000 and can be overridden via
+    `cost_thresholds` in `.tf-review.yml`.
+
     On a recoverable error (missing binary, infracost non-zero exit,
     timeout, bad plan file) returns `{"error": "..."}` instead.
     """
-    result = estimate_cost_delta_from_plan(plan_json_path)
+    result = estimate_cost_delta_from_plan(plan_json_path, config=_active_config())
     if isinstance(result, CostSummary):
         return json.dumps(result.to_dict(), indent=2)
     return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+def get_active_config() -> str:
+    """Return the active ReviewConfig: built-in defaults merged with any
+    `.tf-review.yml` overrides found in cwd / parent dirs / TF_REVIEW_CONFIG.
+
+    Useful for debugging when an expected finding doesn't appear (a rule may
+    be disabled, or a custom resource type may be missing from the extend
+    list). If config parsing failed, the response includes an `error` field
+    and falls back to defaults.
+    """
+    try:
+        cfg = load_config()
+        return json.dumps(cfg.to_dict(), indent=2)
+    except ConfigError as exc:
+        fallback = default_config().to_dict()
+        fallback["error"] = str(exc)
+        return json.dumps(fallback, indent=2)
 
 
 def main() -> None:

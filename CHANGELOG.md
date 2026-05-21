@@ -4,6 +4,38 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 uses [Semantic Versioning](https://semver.org/).
 
+## [0.3.1] - 2026-05-21
+
+### Added
+- `.tf-review.yml` configuration file. Teams can extend the built-in
+  `HIGH_RISK_TYPES`, `STATEFUL_TYPES`, and public-CIDR lists, override
+  cost thresholds, and disable specific rules without forking.
+- Config discovery: `TF_REVIEW_CONFIG` env var > `.tf-review.yml` in cwd
+  > walk-up to filesystem root > built-in defaults.
+- `get_active_config` MCP tool. Returns the merged config (defaults +
+  YAML overrides) for debugging when expected findings don't appear.
+- New `config.py` module with hand-rolled YAML schema validation. Surfaces
+  unknown keys, unknown rule ids, and unsupported `version` fields as
+  helpful errors rather than stack traces.
+- 15 new tests in `tests/test_config.py` plus 2 in `tests/test_cost.py`
+  covering threshold overrides and the `cost-delta` disable short-circuit.
+- Example config fixture at `tests/fixtures/example_config.yml`.
+
+### Changed
+- `review_plan_file` and `review_plan_json` now accept an optional
+  `config: ReviewConfig | None` argument. Passing `None` (or omitting
+  the argument) preserves the v0.3.0 behavior.
+- `estimate_cost_delta_from_plan` accepts the same optional config and
+  reads thresholds from it.
+- The MCP tools (`review_plan`, `suggest_review_comments`,
+  `estimate_cost_delta`) discover the active config on every call so
+  edits to `.tf-review.yml` are picked up without a server restart.
+- Built-in classification lists moved from `review.py` into `config.py`
+  as a single source of truth. The public API is unchanged.
+
+### Added (dependencies)
+- `PyYAML>=6.0` is now a required dependency.
+
 ## [0.3.0] - 2026-05-21
 
 ### Added

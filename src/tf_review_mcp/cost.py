@@ -16,13 +16,10 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from .config import ReviewConfig, default_config
+
 INFRACOST_TIMEOUT_SECONDS = 60
 TOP_CONTRIBUTORS_LIMIT = 10
-
-# Hardcoded thresholds for v0.3.0. PR #2 (YAML config) makes these overridable.
-INFO_THRESHOLD_USD = 100.0
-WARN_THRESHOLD_USD = 500.0
-BLOCKER_THRESHOLD_USD = 1000.0
 
 
 @dataclass
@@ -106,21 +103,24 @@ def _contributors_from_infracost(payload: dict[str, Any]) -> list[CostContributo
     return contributors[:TOP_CONTRIBUTORS_LIMIT]
 
 
-def _build_notes(total_delta: float) -> list[str]:
+def _build_notes(total_delta: float, thresholds: dict[str, float]) -> list[str]:
     notes: list[str] = []
     abs_delta = abs(total_delta)
     direction = "increase" if total_delta > 0 else "decrease"
-    if abs_delta >= BLOCKER_THRESHOLD_USD:
+    blocker = thresholds.get("blocker_usd", 1000.0)
+    warn = thresholds.get("warn_usd", 500.0)
+    info = thresholds.get("info_usd", 100.0)
+    if abs_delta >= blocker:
         notes.append(
             f"Estimated monthly cost {direction} of ${abs_delta:,.2f} exceeds "
-            f"${BLOCKER_THRESHOLD_USD:,.0f}. Strong review recommended."
+            f"${blocker:,.0f}. Strong review recommended."
         )
-    elif abs_delta >= WARN_THRESHOLD_USD:
+    elif abs_delta >= warn:
         notes.append(
             f"Estimated monthly cost {direction} of ${abs_delta:,.2f} exceeds "
-            f"${WARN_THRESHOLD_USD:,.0f}."
+            f"${warn:,.0f}."
         )
-    elif abs_delta >= INFO_THRESHOLD_USD:
+    elif abs_delta >= info:
         notes.append(
             f"Estimated monthly cost {direction} of ${abs_delta:,.2f}."
         )
@@ -129,13 +129,22 @@ def _build_notes(total_delta: float) -> list[str]:
     return notes
 
 
-def estimate_cost_delta_from_plan(plan_json_path: str | Path) -> CostSummary | dict[str, Any]:
+def estimate_cost_delta_from_plan(
+    plan_json_path: str | Path, config: ReviewConfig | None = None
+) -> CostSummary | dict[str, Any]:
     """Run `infracost breakdown` on a Terraform plan JSON and parse the result.
 
     Returns a `CostSummary` on success. On a recoverable error (missing binary,
     non-zero exit, timeout, bad plan file) returns a structured error dict so
     the MCP tool surfaces actionable text rather than a stack trace.
     """
+    cfg = config or default_config()
+    if cfg.is_rule_disabled("cost-delta"):
+        return {
+            "error": "cost-delta rule disabled by config",
+            "source_path": cfg.source_path,
+        }
+
     p = Path(plan_json_path).expanduser()
     if not p.exists():
         return {
@@ -188,7 +197,7 @@ def estimate_cost_delta_from_plan(plan_json_path: str | Path) -> CostSummary | d
     total_delta = round(total_current - total_previous, 2)
 
     contributors = _contributors_from_infracost(payload)
-    notes = _build_notes(total_delta)
+    notes = _build_notes(total_delta, cfg.cost_thresholds)
 
     return CostSummary(
         total_monthly_cost_delta_usd=total_delta,
