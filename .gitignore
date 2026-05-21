@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+dist/
+build/
+.ruff_cache/
+.pytest_cache/
+.DS_Store
+*.tfplan
+*.tfplan.json
+!tests/fixtures/*.json

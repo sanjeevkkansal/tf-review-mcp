@@ -1,0 +1,72 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.9.5",
+  "resource_changes": [
+    {
+      "address": "google_compute_firewall.rpc_public",
+      "type": "google_compute_firewall",
+      "name": "rpc_public",
+      "provider_name": "registry.terraform.io/hashicorp/google",
+      "change": {
+        "actions": ["update"],
+        "before": {"source_ranges": ["10.0.0.0/8"]},
+        "after": {"source_ranges": ["0.0.0.0/0"]}
+      }
+    },
+    {
+      "address": "google_compute_instance.op_geth",
+      "type": "google_compute_instance",
+      "name": "op_geth",
+      "provider_name": "registry.terraform.io/hashicorp/google",
+      "change": {
+        "actions": ["delete", "create"],
+        "before": {"machine_type": "n2-standard-8"},
+        "after": {"machine_type": "n2-standard-16"}
+      }
+    },
+    {
+      "address": "google_sql_database_instance.indexer",
+      "type": "google_sql_database_instance",
+      "name": "indexer",
+      "provider_name": "registry.terraform.io/hashicorp/google",
+      "change": {
+        "actions": ["delete"],
+        "before": {"name": "indexer-prod"},
+        "after": null
+      }
+    },
+    {
+      "address": "google_dns_record_set.api",
+      "type": "google_dns_record_set",
+      "name": "api",
+      "provider_name": "registry.terraform.io/hashicorp/google",
+      "change": {
+        "actions": ["update"],
+        "before": {"rrdatas": ["1.2.3.4"]},
+        "after": {"rrdatas": ["1.2.3.5"]}
+      }
+    },
+    {
+      "address": "google_project_iam_member.deployer",
+      "type": "google_project_iam_member",
+      "name": "deployer",
+      "provider_name": "registry.terraform.io/hashicorp/google",
+      "change": {
+        "actions": ["create"],
+        "before": null,
+        "after": {"role": "roles/editor"}
+      }
+    },
+    {
+      "address": "google_storage_bucket_object.config",
+      "type": "google_storage_bucket_object",
+      "name": "config",
+      "provider_name": "registry.terraform.io/hashicorp/google",
+      "change": {
+        "actions": ["update"],
+        "before": {"name": "config.json"},
+        "after": {"name": "config.json"}
+      }
+    }
+  ]
+}

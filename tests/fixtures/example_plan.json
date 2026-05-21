@@ -1,0 +1,61 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.9.5",
+  "resource_changes": [
+    {
+      "address": "aws_db_instance.primary",
+      "type": "aws_db_instance",
+      "name": "primary",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": ["delete", "create"],
+        "before": {"identifier": "prod-primary"},
+        "after": {"identifier": "prod-primary-v2"}
+      }
+    },
+    {
+      "address": "aws_security_group.web",
+      "type": "aws_security_group",
+      "name": "web",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": ["update"],
+        "before": {"ingress": []},
+        "after": {"ingress": [{"from_port": 443, "to_port": 443}]}
+      }
+    },
+    {
+      "address": "aws_s3_bucket.logs",
+      "type": "aws_s3_bucket",
+      "name": "logs",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": ["create"],
+        "before": null,
+        "after": {"bucket": "example-logs-2026"}
+      }
+    },
+    {
+      "address": "aws_iam_role.app",
+      "type": "aws_iam_role",
+      "name": "app",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": ["update"],
+        "before": {"name": "app"},
+        "after": {"name": "app"}
+      }
+    },
+    {
+      "address": "aws_instance.worker",
+      "type": "aws_instance",
+      "name": "worker",
+      "provider_name": "registry.terraform.io/hashicorp/aws",
+      "change": {
+        "actions": ["create"],
+        "before": null,
+        "after": {"instance_type": "t3.medium"}
+      }
+    }
+  ]
+}
