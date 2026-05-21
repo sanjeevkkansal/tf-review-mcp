@@ -12,6 +12,7 @@ from unittest.mock import patch
 
 import pytest
 
+from tf_review_mcp.config import ReviewConfig, default_config
 from tf_review_mcp.cost import CostSummary, estimate_cost_delta_from_plan
 
 FIXTURE = Path(__file__).parent / "fixtures" / "example_plan.json"
@@ -160,6 +161,38 @@ def test_cost_summary_to_dict_serializes_contributors():
     d = result.to_dict()
     assert d["top_contributors"][0]["address"] == "aws_db_instance.huge"
     assert d["top_contributors"][0]["monthly_cost_delta_usd"] == 500.0
+
+
+def test_custom_cost_thresholds_change_note_level():
+    """A $200 delta is normally info-level; lowering warn_usd to 150 promotes it."""
+    base = default_config()
+    cfg = ReviewConfig(
+        high_risk_types=base.high_risk_types,
+        stateful_types=base.stateful_types,
+        public_cidrs=base.public_cidrs,
+        cost_thresholds={"info_usd": 50.0, "warn_usd": 150.0, "blocker_usd": 999999.0},
+        disabled_rules=frozenset(),
+    )
+    payload = _infracost_payload(total=200.0, past=0.0)
+    which, run = _patch_infracost(payload)
+    with which, run:
+        result = estimate_cost_delta_from_plan(FIXTURE, config=cfg)
+    assert isinstance(result, CostSummary)
+    assert any("$150" in n for n in result.notes)
+
+
+def test_disabled_cost_rule_short_circuits():
+    cfg = ReviewConfig(
+        high_risk_types=frozenset(),
+        stateful_types=frozenset(),
+        public_cidrs=frozenset(),
+        cost_thresholds={"info_usd": 100.0, "warn_usd": 500.0, "blocker_usd": 1000.0},
+        disabled_rules=frozenset({"cost-delta"}),
+    )
+    # No mocks needed: should bail before touching the filesystem or infracost.
+    result = estimate_cost_delta_from_plan(FIXTURE, config=cfg)
+    assert isinstance(result, dict)
+    assert "disabled" in result["error"]
 
 
 if __name__ == "__main__":

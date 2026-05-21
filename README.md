@@ -6,7 +6,7 @@
 
 An MCP server that reviews Terraform plans for blast radius, stateful destroys, and high-risk resource changes. Plug it into Claude Desktop, Cursor, Claude Code, or any MCP client to get structured plan review on demand.
 
-> **Status:** v0.3, experimental. Tool contracts may change before 1.0. Issues and PRs welcome.
+> **Status:** v0.3.1, experimental. Tool contracts may change before 1.0. Issues and PRs welcome.
 
 ![tf-review-mcp demo](docs/tf-mcp-demo.gif)
 
@@ -18,11 +18,12 @@ See [DESIGN.md](DESIGN.md) for architecture, threat model, and the existing-tool
 
 ## What it does
 
-Three tools:
+Four tools:
 
 - `review_plan(plan_json_path)` — returns a structured summary: action counts (create/update/delete/replace), high-blast-radius resource changes, stateful destroys, and diff-aware public-exposure findings.
 - `suggest_review_comments(plan_json_path)` — returns a list of `{address, severity, comment}` objects ready to drop into a PR review. Severities: `blocker | warn | info`.
 - `estimate_cost_delta(plan_json_path)` — wraps the [Infracost](https://www.infracost.io/) CLI to return the projected monthly cost delta, top cost contributors, and threshold-based notes.
+- `get_active_config()` — returns the merged `ReviewConfig` (built-in defaults plus any `.tf-review.yml` overrides). Useful for debugging when an expected finding doesn't appear.
 
 What gets flagged:
 
@@ -107,9 +108,53 @@ pip install -e ".[dev]"
 pytest
 ```
 
+## Configuration
+
+Drop a `.tf-review.yml` at the root of your Terraform repo to extend the
+built-in rules without forking. All fields are optional; missing fields
+fall back to defaults.
+
+```yaml
+version: 1
+
+# Add resource types to the built-in HIGH_RISK_TYPES list (flagged `warn`).
+extra_high_risk_types:
+  - cloudflare_record
+  - vault_policy
+
+# Add resource types to the built-in STATEFUL_TYPES list
+# (flagged `blocker` on delete/replace).
+extra_stateful_types:
+  - mongodbatlas_cluster
+
+# Extra CIDRs treated as "public exposure" for google_compute_firewall.
+extra_public_cidrs:
+  - "10.0.0.0/8"
+
+# Override the cost-delta thresholds (USD per month).
+cost_thresholds:
+  info_usd: 50
+  warn_usd: 250
+  blocker_usd: 1500
+
+# Suppress specific rules entirely. Known rule ids:
+#   high-risk, stateful-destroy, public-exposure, cost-delta
+disabled_rules:
+  - public-exposure
+```
+
+Discovery order:
+
+1. `TF_REVIEW_CONFIG=/abs/path/config.yml` (env var override).
+2. `.tf-review.yml` in the current working directory.
+3. Walk up parent directories until the filesystem root.
+4. Built-in defaults.
+
+Call `get_active_config` from the MCP client to see the merged
+configuration the server is actually using.
+
 ## Roadmap
 
-- Configurable `HIGH_RISK_TYPES`, exposure rules, and cost thresholds via a `.tf-review.yml` so teams can codify their own blast-radius rules without forking.
 - `check_policy` (run OPA/Conftest against the plan).
 - More diff-aware checks: `aws_security_group` ingress widening, `google_storage_bucket` `force_destroy` toggles, IAM `*` role grants.
 

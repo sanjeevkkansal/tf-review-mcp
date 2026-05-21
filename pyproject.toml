@@ -1,6 +1,6 @@
 [project]
 name = "tf-review-mcp"
-version = "0.3.0"
+version = "0.3.1"
 description = "MCP server that reviews Terraform plans for blast radius, cost, and policy violations"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -8,6 +8,7 @@ authors = [{ name = "Sanjeev Kumar" }]
 license = { text = "MIT" }
 dependencies = [
     "mcp>=1.2.0",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
