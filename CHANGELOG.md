@@ -4,6 +4,27 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 uses [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] - 2026-05-21
+
+### Added
+- `estimate_cost_delta` MCP tool that wraps the Infracost CLI to return
+  a structured monthly cost delta for a Terraform plan: total delta,
+  top contributors by absolute delta, currency, infracost version, and
+  threshold-based notes.
+- New `cost.py` module with `CostSummary` / `CostContributor` dataclasses
+  and `estimate_cost_delta_from_plan()` pure function. No MCP imports,
+  reusable from CLI or CI.
+- Recoverable errors (missing `infracost` binary, non-zero exit, timeout,
+  invalid plan JSON) return a structured `{"error": "..."}` dict so the
+  model gets actionable text instead of a stack trace.
+- Test suite (`tests/test_cost.py`) with mocked `subprocess.run` and
+  `shutil.which` so CI runs without Infracost installed.
+
+### Notes
+- Cost-delta thresholds (`$100` info, `$500` warn, `$1000` blocker) are
+  hardcoded in this release. The upcoming v0.3.1 YAML config will make
+  them overridable per team.
+
 ## [0.2.0] - 2026-05-21
 
 ### Added

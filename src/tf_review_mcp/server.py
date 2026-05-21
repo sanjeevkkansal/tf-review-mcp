@@ -10,6 +10,7 @@ import json
 
 from mcp.server.fastmcp import FastMCP
 
+from .cost import CostSummary, estimate_cost_delta_from_plan
 from .review import review_plan_file
 
 mcp = FastMCP("tf-review-mcp")
@@ -100,6 +101,30 @@ def suggest_review_comments(plan_json_path: str) -> str:
         )
 
     return json.dumps(comments, indent=2)
+
+
+@mcp.tool()
+def estimate_cost_delta(plan_json_path: str) -> str:
+    """Estimate the monthly cost delta for a Terraform plan via Infracost.
+
+    Requires `infracost` to be installed and on PATH. Run `infracost auth login`
+    once to set up the free API token.
+
+    Returns a JSON object with:
+      - total_monthly_cost_delta_usd: net change in monthly cost
+      - top_contributors: resources with the largest absolute cost delta
+      - currency: typically "USD"
+      - infracost_version: which CLI version produced the estimate
+      - notes: human-readable strings, e.g., "Estimated monthly cost
+        increase of $612.40 exceeds $500."
+
+    On a recoverable error (missing binary, infracost non-zero exit,
+    timeout, bad plan file) returns `{"error": "..."}` instead.
+    """
+    result = estimate_cost_delta_from_plan(plan_json_path)
+    if isinstance(result, CostSummary):
+        return json.dumps(result.to_dict(), indent=2)
+    return json.dumps(result, indent=2)
 
 
 def main() -> None:
