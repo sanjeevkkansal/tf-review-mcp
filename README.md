@@ -6,7 +6,7 @@
 
 An MCP server that reviews Terraform plans for blast radius, stateful destroys, and high-risk resource changes. Plug it into Claude Desktop, Cursor, Claude Code, or any MCP client to get structured plan review on demand.
 
-> **Status:** v0.2, experimental. Tool contracts may change before 1.0. Issues and PRs welcome.
+> **Status:** v0.3, experimental. Tool contracts may change before 1.0. Issues and PRs welcome.
 
 ![tf-review-mcp demo](docs/tf-mcp-demo.gif)
 
@@ -18,16 +18,18 @@ See [DESIGN.md](DESIGN.md) for architecture, threat model, and the existing-tool
 
 ## What it does
 
-Two tools:
+Three tools:
 
 - `review_plan(plan_json_path)` — returns a structured summary: action counts (create/update/delete/replace), high-blast-radius resource changes, stateful destroys, and diff-aware public-exposure findings.
 - `suggest_review_comments(plan_json_path)` — returns a list of `{address, severity, comment}` objects ready to drop into a PR review. Severities: `blocker | warn | info`.
+- `estimate_cost_delta(plan_json_path)` — wraps the [Infracost](https://www.infracost.io/) CLI to return the projected monthly cost delta, top cost contributors, and threshold-based notes.
 
 What gets flagged:
 
 - **High-risk types** (warn). Conservative built-in list across AWS, GCP, and Azure: IAM, RDS, KMS, security groups, S3, EKS, GKE, Cloud SQL, GCS, Cloud DNS, GCE firewalls, AKS, Key Vault, etc.
 - **Stateful destroys** (blocker). RDS/Cloud SQL/DynamoDB/GCS/S3 deletes or replaces, plus `google_compute_instance` replaces (boot disk + local SSD loss).
 - **Public exposure** (blocker). Diff-aware: catches `google_compute_firewall` changes that add `0.0.0.0/0` or `::/0` to `source_ranges`.
+- **Cost delta** (informational). Total monthly delta plus per-resource top contributors. Notes escalate at `$100`, `$500`, and `$1000` thresholds.
 
 ## Install
 
@@ -38,6 +40,19 @@ pip install -e .
 ```
 
 Requires Python 3.11+.
+
+### Optional: Infracost for `estimate_cost_delta`
+
+The `estimate_cost_delta` tool shells out to the Infracost CLI. Install it
+once and authenticate (the API token is free for individual use):
+
+```bash
+brew install infracost
+infracost auth login
+```
+
+If `infracost` is not on `PATH`, the tool returns a structured error
+explaining how to install it. The other tools work without Infracost.
 
 ## Generate a plan to review
 
@@ -94,9 +109,8 @@ pytest
 
 ## Roadmap
 
-- `estimate_cost_delta` (wrap Infracost CLI).
+- Configurable `HIGH_RISK_TYPES`, exposure rules, and cost thresholds via a `.tf-review.yml` so teams can codify their own blast-radius rules without forking.
 - `check_policy` (run OPA/Conftest against the plan).
-- Configurable `HIGH_RISK_TYPES` and exposure rules via a YAML file so teams can codify their own blast-radius rules.
 - More diff-aware checks: `aws_security_group` ingress widening, `google_storage_bucket` `force_destroy` toggles, IAM `*` role grants.
 
 ## License

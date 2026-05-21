@@ -56,6 +56,8 @@ Worth doing only if a team finds the local v1 useful and wants to enforce the sa
   +-- server.py        FastMCP entry point. Tool registration + thin wrappers.
   +-- review.py        Pure functions. Parse plan JSON, classify changes,
   |                    build ReviewSummary. No I/O beyond reading the plan file.
+  +-- cost.py          Pure functions. Wraps the Infracost CLI as a subprocess
+  |                    and parses its JSON output into a CostSummary.
   +-- __init__.py
 ```
 
@@ -104,9 +106,34 @@ Returns a JSON list of `{address, severity, comment}`. Severities: `blocker | wa
 
 The server produces *what to comment on*, not the final wording. The model refines tone, adds context from the surrounding PR, and posts.
 
-### Future tools (v2)
+### `estimate_cost_delta(plan_json_path: str) -> str`
 
-- `estimate_cost_delta(plan_json_path)` — shell out to Infracost, return parsed delta.
+Input: path to a `terraform show -json` output.
+
+Output: JSON object shaped as:
+
+```json
+{
+  "total_monthly_cost_delta_usd": 612.40,
+  "top_contributors": [
+    {"address": "google_sql_database_instance.primary", "monthly_cost_delta_usd": 500.00},
+    {"address": "google_compute_instance.worker", "monthly_cost_delta_usd": 112.40}
+  ],
+  "currency": "USD",
+  "infracost_version": "0.10.40",
+  "notes": ["Estimated monthly cost increase of $612.40 exceeds $500."]
+}
+```
+
+Implementation notes:
+
+- Shells out to `infracost breakdown --path <plan> --format json --no-color` with a 60-second timeout.
+- Recoverable errors (missing binary, non-zero exit, timeout, bad plan JSON) return `{"error": "...", ...}` instead of raising. The MCP model sees actionable text, not a stack trace.
+- Thresholds are hardcoded in v0.3.0 (`$100` info, `$500` warn, `$1000` blocker). The upcoming YAML config makes them per-team.
+- The module is pure Python with no MCP imports, so it can be reused from CI or a CLI.
+
+### Future tools
+
 - `check_policy(plan_json_path, policy_dir)` — shell out to Conftest, return violations.
 - `diff_resource(plan_json_path, address)` — return the `before`/`after` for a single resource so the model can drill in without re-parsing the whole plan.
 
@@ -165,10 +192,11 @@ I have not found a published MCP server scoped specifically to plan review with 
 
 1. **v0.1 (done):** `review_plan`, `suggest_review_comments`, stdio transport, fixture-backed tests.
 2. **v0.2 (done):** GCP coverage (Cloud DNS, GCE firewalls, GKE node pools, IAM bindings), `google_compute_instance` replace as stateful destroy, diff-aware public-exposure check for `google_compute_firewall`.
-3. **v0.3:** `estimate_cost_delta` (wrap Infracost), config file for custom high-risk types and exposure rules.
-4. **v0.4:** `check_policy` (wrap Conftest), `diff_resource` for drilling in, more diff-aware checks (SG ingress, IAM `*` grants, GCS `force_destroy`).
-5. **v0.5:** HTTP transport behind an internal token for CI use.
-6. **v1.0:** stable tool contracts, semver guarantees, packaged for pipx/Homebrew.
+3. **v0.3.0 (done):** `estimate_cost_delta` (wraps Infracost CLI), structured error handling for missing binary / timeout / non-zero exit.
+4. **v0.3.1:** `.tf-review.yml` config file for custom high-risk types, exposure CIDRs, and cost thresholds.
+5. **v0.4:** `check_policy` (wrap Conftest), `diff_resource` for drilling in, more diff-aware checks (SG ingress, IAM `*` grants, GCS `force_destroy`).
+6. **v0.5:** HTTP transport behind an internal token for CI use.
+7. **v1.0:** stable tool contracts, semver guarantees, packaged for pipx/Homebrew.
 
 ## Open questions
 
