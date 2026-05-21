@@ -8,6 +8,8 @@ An MCP server that reviews Terraform plans for blast radius, stateful destroys, 
 
 > **Status:** v0.2, experimental. Tool contracts may change before 1.0. Issues and PRs welcome.
 
+![tf-review-mcp demo](docs/tf-mcp-demo.gif)
+
 See [DESIGN.md](DESIGN.md) for architecture, threat model, and the existing-tools survey.
 
 ## Why
