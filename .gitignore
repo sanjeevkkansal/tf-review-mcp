@@ -11,3 +11,5 @@ build/
 *.tfplan
 *.tfplan.json
 !tests/fixtures/*.json
+V0_3_PLAN.md
+V0_4_PLAN.md
