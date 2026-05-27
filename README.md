@@ -15,14 +15,16 @@ Both packages ship from this monorepo and release independently. See each packag
 ```bash
 git clone https://github.com/your-user/tf-review-mcp.git
 cd tf-review-mcp
-uv sync
+uv sync --all-packages
 ```
 
-Run tests per package:
+`--all-packages` is required: the workspace root has no project deps pointing at the members, so plain `uv sync` would only install whatever the root references. `--all-packages` installs every workspace member editable into `.venv/`.
+
+Run tests per package (pytest lives in each package's `dev` extra):
 
 ```bash
-uv run --package tf-review-mcp pytest packages/tf-review-mcp/tests
-uv run --package mcp-adversarial pytest packages/mcp-adversarial/tests
+uv run --package tf-review-mcp --extra dev pytest packages/tf-review-mcp/tests
+uv run --package mcp-adversarial --extra dev pytest packages/mcp-adversarial/tests
 ```
 
 ## License
