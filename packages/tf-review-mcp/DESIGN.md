@@ -167,6 +167,64 @@ action)` so wildcards in the action expand against the literal
 pattern, not the other way around. This is the standard
 interpretation of "broad grant = bad."
 
+### `analyze_attack_paths(plan_json_path: str) -> str`
+
+Output: JSON with `paths` (list of `AttackPath`) and `summary`
+(new / widened / preexisting-unchanged counts).
+
+#### Attack-path model
+
+`networkx.DiGraph` with one synthetic `internet` node plus one node
+per relevant resource. Node kinds: `internet`, `ingress`, `sg`,
+`compute`, `principal`, `data`, `network`. Edges are directed and
+labeled with a short reason string.
+
+What the model captures (v0.4.2):
+
+- Public ingress (`0.0.0.0/0` SG rules; ALB / NLB with
+  `scheme=internet-facing`; CloudFront; API Gateway; GCP firewalls).
+- Compute attached to security groups (EC2 `vpc_security_group_ids`,
+  Lambda VPC config, ECS service network config).
+- Principal attached to compute (EC2 instance profile, Lambda
+  execution role, ECS task role, GCE service account).
+- Principal -> data via IAM grants. Inline-policy Actions are paired
+  with Resource ARNs; managed-admin attachments fan out to every
+  known data node.
+
+What it does NOT capture (explicit non-goals for v0.4.2):
+
+- Cross-VPC reachability (peering, transit gateways, VPC endpoints).
+- DNS-level egress.
+- IAM policy `Condition` evaluation. Conditions can narrow a grant
+  in practice; we treat the grant as if no condition were set.
+- SaaS-CNAPP-level traversal (multi-account assume-role chains).
+
+#### Path search
+
+`nx.all_simple_paths(g, "internet", sink, cutoff=8)` for each `sink`
+in the set of data nodes. Total paths capped at 50. The defaults
+can be raised via `max_depth` / `max_paths` on the pure-function
+entry point. The bounds are intentional; longer paths exist on real
+plans but rarely add signal.
+
+#### Diff
+
+Build both before- and after-graphs. A path in the after-graph is:
+
+- `new`       if the node sequence does not appear in the
+              before-graph's enumerated paths. Severity `blocker`.
+- `widened`   if it does appear, but at least one edge was
+              introduced by the plan. Severity `warn`.
+- `unchanged` otherwise. Counted in summary but not enumerated in
+              `paths` unless `include_preexisting=True`.
+
+#### IAM dependency
+
+The principal-to-data edge builder reuses `iam._policy_doc_pairs`
+and `iam._matches_any` from PR #2 to enumerate granted permissions
+and recognize admin policy ARNs. The classifier and the graph share
+one source of truth for "what is an admin grant?".
+
 ### `estimate_cost_delta(plan_json_path: str) -> str`
 
 Input: path to a `terraform show -json` output.

@@ -1,0 +1,22 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.7.0",
+  "resource_changes": [
+    {
+      "address": "aws_iam_policy.harmless",
+      "type": "aws_iam_policy",
+      "name": "harmless",
+      "change": {
+        "actions": [
+          "update"
+        ],
+        "before": {
+          "policy": "{\"Statement\": [{\"Effect\": \"Allow\", \"Action\": \"ec2:DescribeInstances\", \"Resource\": \"*\"}]}"
+        },
+        "after": {
+          "policy": "{\"Statement\": [{\"Effect\": \"Allow\", \"Action\": \"ec2:DescribeRegions\", \"Resource\": \"*\"}]}"
+        }
+      }
+    }
+  ]
+}

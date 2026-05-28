@@ -1,0 +1,74 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.7.0",
+  "resource_changes": [
+    {
+      "address": "aws_security_group.web",
+      "type": "aws_security_group",
+      "name": "web",
+      "change": {
+        "actions": [
+          "update"
+        ],
+        "before": {
+          "ingress": []
+        },
+        "after": {
+          "ingress": [
+            {
+              "from_port": 443,
+              "cidr_blocks": [
+                "0.0.0.0/0"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "address": "aws_instance.worker",
+      "type": "aws_instance",
+      "name": "worker",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "vpc_security_group_ids": [
+            "aws_security_group.web"
+          ],
+          "iam_instance_profile": "worker-profile"
+        }
+      }
+    },
+    {
+      "address": "aws_iam_instance_profile.worker-profile",
+      "type": "aws_iam_role_policy",
+      "name": "worker-profile",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "policy": "{\"Statement\": [{\"Effect\": \"Allow\", \"Action\": \"s3:GetObject\", \"Resource\": \"*\"}]}"
+        }
+      }
+    },
+    {
+      "address": "aws_s3_bucket.customer_data",
+      "type": "aws_s3_bucket",
+      "name": "customer_data",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "bucket": "customer-data"
+        }
+      }
+    }
+  ]
+}

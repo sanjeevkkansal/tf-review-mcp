@@ -1,0 +1,96 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.7.0",
+  "resource_changes": [
+    {
+      "address": "aws_security_group.web",
+      "type": "aws_security_group",
+      "name": "web",
+      "change": {
+        "actions": [
+          "update"
+        ],
+        "before": {
+          "ingress": [
+            {
+              "from_port": 443,
+              "cidr_blocks": [
+                "0.0.0.0/0"
+              ]
+            }
+          ],
+          "tags": {
+            "env": "prod"
+          }
+        },
+        "after": {
+          "ingress": [
+            {
+              "from_port": 443,
+              "cidr_blocks": [
+                "0.0.0.0/0"
+              ]
+            }
+          ],
+          "tags": {
+            "env": "production"
+          }
+        }
+      }
+    },
+    {
+      "address": "aws_instance.worker",
+      "type": "aws_instance",
+      "name": "worker",
+      "change": {
+        "actions": [
+          "no-op"
+        ],
+        "before": {
+          "vpc_security_group_ids": [
+            "aws_security_group.web"
+          ],
+          "iam_instance_profile": "worker-profile"
+        },
+        "after": {
+          "vpc_security_group_ids": [
+            "aws_security_group.web"
+          ],
+          "iam_instance_profile": "worker-profile"
+        }
+      }
+    },
+    {
+      "address": "aws_iam_instance_profile.worker-profile",
+      "type": "aws_iam_role_policy",
+      "name": "worker-profile",
+      "change": {
+        "actions": [
+          "no-op"
+        ],
+        "before": {
+          "policy": "{\"Statement\": [{\"Effect\": \"Allow\", \"Action\": \"s3:GetObject\", \"Resource\": \"*\"}]}"
+        },
+        "after": {
+          "policy": "{\"Statement\": [{\"Effect\": \"Allow\", \"Action\": \"s3:GetObject\", \"Resource\": \"*\"}]}"
+        }
+      }
+    },
+    {
+      "address": "aws_s3_bucket.customer_data",
+      "type": "aws_s3_bucket",
+      "name": "customer_data",
+      "change": {
+        "actions": [
+          "no-op"
+        ],
+        "before": {
+          "bucket": "customer-data"
+        },
+        "after": {
+          "bucket": "customer-data"
+        }
+      }
+    }
+  ]
+}

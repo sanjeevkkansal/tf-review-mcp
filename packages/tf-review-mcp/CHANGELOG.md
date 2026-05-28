@@ -4,6 +4,57 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 uses [Semantic Versioning](https://semver.org/).
 
+## [0.4.2] - 2026-05-28
+
+New tool: `analyze_attack_paths`. Graph-based reachability search from
+the public internet to sensitive data, with new-vs-widened diff. This
+is the flagship v0.4 feature.
+
+### Added
+- `analyze_attack_paths(plan_json_path)` MCP tool. Builds a directed
+  graph from `resource_changes` (compute, IAM principals, data stores,
+  network edges, public ingress), searches for simple paths from a
+  synthetic `internet` node to any sensitive resource, diffs against
+  the before-state, and surfaces paths that are *new* or *widened*.
+- New `attack_paths.py` module (pure functions, no MCP imports).
+  Four layers: graph builder, path enumeration (via networkx
+  `all_simple_paths`), diff, template-based narrative.
+- AWS coverage is comprehensive: public ALB / NLB, CloudFront,
+  API Gateway, security group ingress with `0.0.0.0/0` or `::/0`,
+  SG attachment to EC2 / Lambda / ECS, instance profiles, IAM
+  inline-policy grants resolving to data ARNs, IAM managed-admin
+  attachments fanning out to every known data node.
+- GCP coverage in v0.4.2 is intentionally light: public firewall
+  rules, compute instances with service accounts, sensitive type
+  recognition. Cross-network plumbing (transit gateways, VPC peering,
+  endpoints) is v0.5 work.
+- `DEFAULT_SENSITIVE_TYPES` covers RDS / Aurora / DynamoDB / S3 /
+  ElastiCache / Secrets Manager / KMS / SSM Parameter on AWS, Cloud
+  SQL / GCS / Secret Manager on GCP, and Key Vault / SQL Server /
+  Storage Account on Azure. The set is extended by
+  `ReviewConfig.stateful_types` so YAML overrides flow through.
+- 11 tests in `test_attack_paths.py` covering new-path detection,
+  widened-path detection, preexisting-unchanged suppression (and the
+  `include_preexisting=True` knob), no-findings short-circuit, GCP
+  node recognition, the disk-reading entry point, sensitive-type
+  invariants, and a 500-resource performance benchmark
+  (build + search must complete in under 2 seconds).
+- 5 fixtures under `tests/fixtures/attack_paths/`.
+
+### Dependencies
+- `networkx>=3.0` is now a required runtime dependency. Pure Python,
+  no native extensions, ~1MB. Used for `all_simple_paths` and the
+  underlying `DiGraph`.
+
+### Notes
+- Path depth and total count are bounded at search time (defaults 8
+  and 50). Long paths still ship in the JSON but the narrative is
+  best read first-and-last-three-hops; the model client can decide
+  whether to expand.
+- The IAM pattern matcher from v0.4.1 (`_matches_any`,
+  `_policy_doc_pairs`) is reused for the principal -> data edge
+  builder; no duplicate logic.
+
 ## [0.4.1] - 2026-05-28
 
 New tool: `review_iam_changes`. Semantic IAM-change classifier built
