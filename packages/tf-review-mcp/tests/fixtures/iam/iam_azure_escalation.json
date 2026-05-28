@@ -1,0 +1,21 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.7.0",
+  "resource_changes": [
+    {
+      "address": "azurerm_role_assignment.admin",
+      "type": "azurerm_role_assignment",
+      "name": "admin",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "role_definition_name": "Owner",
+          "scope": "/subscriptions/abc"
+        }
+      }
+    }
+  ]
+}

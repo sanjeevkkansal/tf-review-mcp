@@ -1,0 +1,22 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.7.0",
+  "resource_changes": [
+    {
+      "address": "aws_iam_policy.legacy",
+      "type": "aws_iam_policy",
+      "name": "legacy",
+      "change": {
+        "actions": [
+          "update"
+        ],
+        "before": {
+          "policy": "{\"Version\": \"2012-10-17\", \"Statement\": [{\"Effect\": \"Allow\", \"Action\": \"iam:*\", \"Resource\": \"*\"}]}"
+        },
+        "after": {
+          "policy": "{\"Version\": \"2012-10-17\", \"Statement\": [{\"Effect\": \"Allow\", \"Action\": \"iam:GetUser\", \"Resource\": \"*\"}]}"
+        }
+      }
+    }
+  ]
+}

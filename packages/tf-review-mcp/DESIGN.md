@@ -108,6 +108,65 @@ Returns a JSON list of `{address, severity, comment}`. Severities: `blocker | wa
 
 The server produces *what to comment on*, not the final wording. The model refines tone, adds context from the surrounding PR, and posts.
 
+### `review_iam_changes(plan_json_path: str) -> str`
+
+Output: JSON with `iam_changes` (list of `IamChange`) and `summary`
+(counts per classification + total). Each `IamChange`:
+
+```json
+{
+  "address": "aws_iam_policy.admin",
+  "type": "aws_iam_policy",
+  "actions": ["update"],
+  "classifications": ["escalation", "exfil"],
+  "added_permissions": ["iam:* on *", "kms:Decrypt on *"],
+  "removed_permissions": [],
+  "narrative": "aws_iam_policy.admin (aws_iam_policy). adds iam:* on *, kms:Decrypt on *.",
+  "severity": "blocker"
+}
+```
+
+Classifications:
+
+- `escalation`: granted action equals or subsumes a known
+  admin-equivalent pattern (`iam:*`, `*:*`, AWS managed admin policy
+  ARN, GCP `roles/owner`, Azure `Owner` / `Contributor`).
+- `lateral`: granted action matches a cross-principal trust pattern
+  (`sts:AssumeRole*`, `iam:PassRole`, GCP `iam.serviceAccount*`,
+  Azure Managed Identity Operator), or an AWS trust policy adds a
+  new Principal.
+- `exfil`: granted action matches a known broad-read pattern
+  (`s3:GetObject`, `kms:Decrypt`, `secretsmanager:GetSecretValue`,
+  GCP `roles/storage.objectViewer`, etc.) **and**, for AWS,
+  is paired with a wildcard resource (`"*"` or `arn:...:*` or
+  contains `/*`). Broad-read on a single narrow ARN is usually fine
+  and not flagged.
+- `tightening`: a previously-granted permission matched any of the
+  above patterns and is being removed. Always informational.
+
+Pattern sets live as constants in `iam.py` and can be extended per
+team via `.tf-review.yml` (`extra_escalation_patterns`,
+`extra_lateral_patterns`, `extra_exfil_patterns`).
+
+#### Why classify, not just flag
+
+`review_plan` already flags "an IAM resource changed." The point of
+this tool is to say *what kind* of change it is, so the model client
+can write a comment with the right severity and context. Classifying
+is rule-based on purpose: the patterns are well-known and
+deterministic. Putting a model inside the classification loop would
+make every call slow, expensive, and harder to test for regressions.
+
+#### Pattern direction (subtle but load-bearing)
+
+A granted action matches a dangerous pattern when the action equals
+or *subsumes* the pattern. Granting `iam:*` matches `iam:PassRole`.
+Granting `iam:GetUser` does NOT match `iam:*` (the grant is
+narrower than the pattern). The matcher uses `fnmatch(pattern,
+action)` so wildcards in the action expand against the literal
+pattern, not the other way around. This is the standard
+interpretation of "broad grant = bad."
+
 ### `estimate_cost_delta(plan_json_path: str) -> str`
 
 Input: path to a `terraform show -json` output.
