@@ -81,7 +81,13 @@ _DEFAULT_COST_THRESHOLDS: dict[str, float] = {
 
 # Rule identifiers that can be disabled via `disabled_rules` in the YAML.
 KNOWN_RULES: frozenset[str] = frozenset(
-    {"high-risk", "stateful-destroy", "public-exposure", "cost-delta"}
+    {
+        "high-risk",
+        "stateful-destroy",
+        "public-exposure",
+        "cost-delta",
+        "iam-review",
+    }
 )
 
 
@@ -96,6 +102,9 @@ class ReviewConfig:
     public_cidrs: frozenset[str]
     cost_thresholds: dict[str, float]
     disabled_rules: frozenset[str]
+    extra_escalation_patterns: frozenset[str] = frozenset()
+    extra_lateral_patterns: frozenset[str] = frozenset()
+    extra_exfil_patterns: frozenset[str] = frozenset()
     source_path: str | None = None  # absolute path to the loaded YAML, or None
 
     def is_rule_disabled(self, rule: str) -> bool:
@@ -108,6 +117,9 @@ class ReviewConfig:
         d["stateful_types"] = sorted(self.stateful_types)
         d["public_cidrs"] = sorted(self.public_cidrs)
         d["disabled_rules"] = sorted(self.disabled_rules)
+        d["extra_escalation_patterns"] = sorted(self.extra_escalation_patterns)
+        d["extra_lateral_patterns"] = sorted(self.extra_lateral_patterns)
+        d["extra_exfil_patterns"] = sorted(self.extra_exfil_patterns)
         return d
 
 
@@ -118,6 +130,9 @@ def default_config() -> ReviewConfig:
         public_cidrs=_DEFAULT_PUBLIC_CIDRS,
         cost_thresholds=dict(_DEFAULT_COST_THRESHOLDS),
         disabled_rules=frozenset(),
+        extra_escalation_patterns=frozenset(),
+        extra_lateral_patterns=frozenset(),
+        extra_exfil_patterns=frozenset(),
         source_path=None,
     )
 
@@ -157,6 +172,15 @@ def _config_from_mapping(raw: dict[str, Any], source: Path | None) -> ReviewConf
     extra_hr = _as_str_list(raw.get("extra_high_risk_types"), "extra_high_risk_types")
     extra_st = _as_str_list(raw.get("extra_stateful_types"), "extra_stateful_types")
     extra_cidrs = _as_str_list(raw.get("extra_public_cidrs"), "extra_public_cidrs")
+    extra_esc = _as_str_list(
+        raw.get("extra_escalation_patterns"), "extra_escalation_patterns"
+    )
+    extra_lat = _as_str_list(
+        raw.get("extra_lateral_patterns"), "extra_lateral_patterns"
+    )
+    extra_exf = _as_str_list(
+        raw.get("extra_exfil_patterns"), "extra_exfil_patterns"
+    )
     disabled = _as_str_list(raw.get("disabled_rules"), "disabled_rules")
 
     unknown = [r for r in disabled if r not in KNOWN_RULES]
@@ -181,6 +205,9 @@ def _config_from_mapping(raw: dict[str, Any], source: Path | None) -> ReviewConf
         public_cidrs=_DEFAULT_PUBLIC_CIDRS | frozenset(extra_cidrs),
         cost_thresholds=thresholds,
         disabled_rules=frozenset(disabled),
+        extra_escalation_patterns=frozenset(extra_esc),
+        extra_lateral_patterns=frozenset(extra_lat),
+        extra_exfil_patterns=frozenset(extra_exf),
         source_path=str(source.resolve()) if source else None,
     )
 
@@ -251,6 +278,9 @@ def _load_from_file(path: Path) -> ReviewConfig:
             public_cidrs=_DEFAULT_PUBLIC_CIDRS,
             cost_thresholds=dict(_DEFAULT_COST_THRESHOLDS),
             disabled_rules=frozenset(),
+            extra_escalation_patterns=frozenset(),
+            extra_lateral_patterns=frozenset(),
+            extra_exfil_patterns=frozenset(),
             source_path=str(path.resolve()),
         )
 
