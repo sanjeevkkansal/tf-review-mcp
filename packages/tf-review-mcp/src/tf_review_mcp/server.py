@@ -2,32 +2,66 @@
 
 Exposes Terraform plan review as MCP tools so a model can pull structured
 plan analysis on demand.
+
+This module is the single place where MCP imports live. The classification
+and cost modules stay pure. Sanitization of LLM-facing strings happens
+here, at the serialization boundary, using mcp-adversarial's sanitize
+helpers; the dataclass values stay truthful so other callers (CLI, CI)
+see the raw data.
 """
 
 from __future__ import annotations
 
 import json
+from typing import Any
 
 from mcp.server.fastmcp import FastMCP
+from mcp_adversarial import sanitize_address_or_marker, sanitize_for_model
 
 from .config import ConfigError, ReviewConfig, default_config, load_config
 from .cost import CostSummary, estimate_cost_delta_from_plan
 from .review import review_plan_file
+from .safety import PolicyError, policy_snapshot
 
 mcp = FastMCP("tf-review-mcp")
 
+_ADDRESS_FIELDS = frozenset({"address"})
+_LONG_TEXT_MAX = 1024
+
 
 def _active_config() -> ReviewConfig:
-    """Load the active config lazily so tests and tools see fresh state.
-
-    Discovery runs on every call (cheap: stat at most a few dirs). If YAML
-    parsing fails, fall back to defaults and surface the reason via the
-    `get_active_config` tool rather than crashing the server.
-    """
+    """Load the active config lazily so tests and tools see fresh state."""
     try:
         return load_config()
     except ConfigError:
         return default_config()
+
+
+def _sanitize_node(value: Any) -> Any:
+    """Recursively sanitize string fields in a JSON-shaped value."""
+    if isinstance(value, str):
+        return sanitize_for_model(value, max_len=_LONG_TEXT_MAX)
+    if isinstance(value, dict):
+        return {k: _sanitize_field(k, v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_sanitize_node(item) for item in value]
+    return value
+
+
+def _sanitize_field(key: str, value: Any) -> Any:
+    if key in _ADDRESS_FIELDS and isinstance(value, str):
+        return sanitize_address_or_marker(value)
+    return _sanitize_node(value)
+
+
+def _structured_error(exc: Exception, *, kind: str) -> str:
+    return json.dumps(
+        {
+            "error": sanitize_for_model(str(exc), max_len=512),
+            "kind": kind,
+        },
+        indent=2,
+    )
 
 
 @mcp.tool()
@@ -43,11 +77,17 @@ def review_plan(plan_json_path: str) -> str:
     resource changes (IAM, security groups, RDS, KMS, etc.), and any stateful
     destroys that warrant explicit review.
 
-    Built-in classifications can be extended via `.tf-review.yml`; use
-    `get_active_config` to see the merged config.
+    All string fields in the output are sanitized for safe display to a
+    language model: known prompt-injection preambles are marked with
+    "[sus]", control characters are stripped, and addresses are validated.
     """
-    summary = review_plan_file(plan_json_path, config=_active_config())
-    return json.dumps(summary.to_dict(), indent=2)
+    try:
+        summary = review_plan_file(plan_json_path, config=_active_config())
+    except PolicyError as exc:
+        return _structured_error(exc, kind="policy")
+    except FileNotFoundError as exc:
+        return _structured_error(exc, kind="not_found")
+    return json.dumps(_sanitize_node(summary.to_dict()), indent=2)
 
 
 @mcp.tool()
@@ -55,10 +95,16 @@ def suggest_review_comments(plan_json_path: str) -> str:
     """Suggest GitHub-style PR review comments for a Terraform plan.
 
     Returns a JSON list of {address, severity, comment} objects derived from
-    the structured review. The model is expected to refine wording before
-    posting; this tool only surfaces what to comment on.
+    the structured review. Severity is one of `blocker | warn | info`.
+    All strings are sanitized before serialization.
     """
-    summary = review_plan_file(plan_json_path, config=_active_config())
+    try:
+        summary = review_plan_file(plan_json_path, config=_active_config())
+    except PolicyError as exc:
+        return _structured_error(exc, kind="policy")
+    except FileNotFoundError as exc:
+        return _structured_error(exc, kind="not_found")
+
     comments: list[dict[str, str]] = []
     flagged: set[str] = set()
 
@@ -117,7 +163,8 @@ def suggest_review_comments(plan_json_path: str) -> str:
             }
         )
 
-    return json.dumps(comments, indent=2)
+    sanitized = [_sanitize_node(c) for c in comments]
+    return json.dumps(sanitized, indent=2)
 
 
 @mcp.tool()
@@ -127,43 +174,31 @@ def estimate_cost_delta(plan_json_path: str) -> str:
     Requires `infracost` to be installed and on PATH. Run `infracost auth login`
     once to set up the free API token.
 
-    Returns a JSON object with:
-      - total_monthly_cost_delta_usd: net change in monthly cost
-      - top_contributors: resources with the largest absolute cost delta
-      - currency: typically "USD"
-      - infracost_version: which CLI version produced the estimate
-      - notes: human-readable strings, e.g., "Estimated monthly cost
-        increase of $612.40 exceeds $500."
-
-    Thresholds default to $100/$500/$1000 and can be overridden via
-    `cost_thresholds` in `.tf-review.yml`.
-
-    On a recoverable error (missing binary, infracost non-zero exit,
-    timeout, bad plan file) returns `{"error": "..."}` instead.
+    Returns a JSON object with structured cost data on success, or
+    `{"error": "..."}` on a recoverable error (missing binary,
+    non-zero exit, timeout, bad plan file, policy violation).
     """
     result = estimate_cost_delta_from_plan(plan_json_path, config=_active_config())
     if isinstance(result, CostSummary):
-        return json.dumps(result.to_dict(), indent=2)
-    return json.dumps(result, indent=2)
+        return json.dumps(_sanitize_node(result.to_dict()), indent=2)
+    return json.dumps(_sanitize_node(result), indent=2)
 
 
 @mcp.tool()
 def get_active_config() -> str:
-    """Return the active ReviewConfig: built-in defaults merged with any
+    """Return the active config: built-in defaults merged with any
     `.tf-review.yml` overrides found in cwd / parent dirs / TF_REVIEW_CONFIG.
 
-    Useful for debugging when an expected finding doesn't appear (a rule may
-    be disabled, or a custom resource type may be missing from the extend
-    list). If config parsing failed, the response includes an `error` field
-    and falls back to defaults.
+    Also includes the host policy snapshot (TF_REVIEW_ALLOWED_DIRS,
+    TF_REVIEW_MAX_PLAN_BYTES).
     """
     try:
-        cfg = load_config()
-        return json.dumps(cfg.to_dict(), indent=2)
+        cfg = load_config().to_dict()
     except ConfigError as exc:
-        fallback = default_config().to_dict()
-        fallback["error"] = str(exc)
-        return json.dumps(fallback, indent=2)
+        cfg = default_config().to_dict()
+        cfg["error"] = str(exc)
+    cfg["host_policy"] = policy_snapshot()
+    return json.dumps(cfg, indent=2)
 
 
 def main() -> None:

@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from .config import ReviewConfig, default_config
+from .safety import PolicyError, validate_plan_path
 
 INFRACOST_TIMEOUT_SECONDS = 60
 TOP_CONTRIBUTORS_LIMIT = 10
@@ -145,7 +146,10 @@ def estimate_cost_delta_from_plan(
             "source_path": cfg.source_path,
         }
 
-    p = Path(plan_json_path).expanduser()
+    try:
+        p = validate_plan_path(plan_json_path)
+    except PolicyError as exc:
+        return {"error": f"plan path rejected by host policy: {exc}"}
     if not p.exists():
         return {
             "error": f"Plan file not found: {p}",
