@@ -1,0 +1,9 @@
+{
+  "id": "generic_control_chars",
+  "category": "sanitize",
+  "args": {
+    "plan_json_path": "value\u0007with\u001bcontrol\u0000chars",
+    "path": "before\b\u007fafter",
+    "content": "embed\u0007bell\u001bescape\u007fdelete"
+  }
+}

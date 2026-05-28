@@ -1,0 +1,36 @@
+{
+  "id": "tf_malformed_actions",
+  "category": "malformed",
+  "tool": "review_plan",
+  "args": {
+    "plan_json_path": "/tmp/plan_tf_malformed.json"
+  },
+  "setup": {
+    "write_files": {
+      "/tmp/plan_tf_malformed.json": {
+        "format_version": "1.2",
+        "terraform_version": "1.7.0",
+        "resource_changes": [
+          {
+            "address": "aws_iam_role.bad",
+            "type": "aws_iam_role",
+            "name": "bad",
+            "change": {
+              "actions": [
+                "delete",
+                "explode",
+                "exfiltrate",
+                null,
+                42
+              ],
+              "before": {
+                "foo": "bar"
+              },
+              "after": null
+            }
+          }
+        ]
+      }
+    }
+  }
+}

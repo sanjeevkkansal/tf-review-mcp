@@ -1,0 +1,30 @@
+{
+  "id": "tf_path_traversal_in_address",
+  "category": "traversal",
+  "tool": "review_plan",
+  "args": {
+    "plan_json_path": "/tmp/plan_tf_traversal.json"
+  },
+  "setup": {
+    "write_files": {
+      "/tmp/plan_tf_traversal.json": {
+        "format_version": "1.2",
+        "terraform_version": "1.7.0",
+        "resource_changes": [
+          {
+            "address": "aws_iam_role.../../etc/passwd",
+            "type": "aws_iam_role",
+            "name": "../etc/passwd",
+            "change": {
+              "actions": [
+                "create"
+              ],
+              "before": null,
+              "after": {}
+            }
+          }
+        ]
+      }
+    }
+  }
+}

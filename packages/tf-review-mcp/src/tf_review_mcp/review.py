@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from .config import ReviewConfig, default_config
+from .safety import validate_plan_path
 
 
 @dataclass
@@ -201,8 +202,13 @@ def review_plan_json(
 def review_plan_file(
     path: str | Path, config: ReviewConfig | None = None
 ) -> ReviewSummary:
-    """Load a plan JSON file from disk and review it."""
-    p = Path(path).expanduser()
+    """Load a plan JSON file from disk and review it.
+
+    Validates the path against host policy (TF_REVIEW_ALLOWED_DIRS,
+    TF_REVIEW_MAX_PLAN_BYTES) before opening. Raises `PolicyError` on
+    a policy violation, `FileNotFoundError` if the file does not exist.
+    """
+    p = validate_plan_path(path)
     if not p.exists():
         raise FileNotFoundError(f"Plan file not found: {p}")
     with p.open() as f:

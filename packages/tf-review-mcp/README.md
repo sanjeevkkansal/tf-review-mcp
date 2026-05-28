@@ -6,7 +6,7 @@
 
 An MCP server that reviews Terraform plans for blast radius, stateful destroys, and high-risk resource changes. Plug it into Claude Desktop, Cursor, Claude Code, or any MCP client to get structured plan review on demand.
 
-> **Status:** v0.3.1, experimental. Tool contracts may change before 1.0. Issues and PRs welcome.
+> **Status:** v0.4.0, experimental. Tool contracts may change before 1.0. Issues and PRs welcome.
 
 ![tf-review-mcp demo](docs/tf-mcp-demo.gif)
 
@@ -153,10 +153,31 @@ Discovery order:
 Call `get_active_config` from the MCP client to see the merged
 configuration the server is actually using.
 
+## Security
+
+All tool output is sanitized for safe display to a language model.
+Two env knobs gate plan file reads:
+
+- `TF_REVIEW_ALLOWED_DIRS` (colon-separated prefix allowlist; unset = any path).
+- `TF_REVIEW_MAX_PLAN_BYTES` (default 50 MB).
+
+This server is tested against
+[mcp-adversarial](../mcp-adversarial/), a generic adversarial-input
+harness for MCP servers. You can run the same suite against any other
+MCP server.
+
+See [../../SECURITY.md](../../SECURITY.md) for the trust boundary,
+threat model, and disclosure policy.
+
 ## Roadmap
 
+- `review_iam_changes` (semantic IAM-diff classification: escalation /
+  lateral / exfil-enabling).
+- `analyze_attack_paths` (graph search from public ingress to sensitive
+  data, with new-vs-widened diff).
 - `check_policy` (run OPA/Conftest against the plan).
-- More diff-aware checks: `aws_security_group` ingress widening, `google_storage_bucket` `force_destroy` toggles, IAM `*` role grants.
+- More diff-aware checks: `aws_security_group` ingress widening,
+  `google_storage_bucket` `force_destroy` toggles, IAM `*` role grants.
 
 ## License
 

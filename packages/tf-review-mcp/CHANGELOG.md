@@ -4,6 +4,49 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 uses [Semantic Versioning](https://semver.org/).
 
+## [0.4.0] - 2026-05-28
+
+Hardening release. No tool-contract changes, but every tool now
+sanitizes LLM-facing output, and a new host-policy layer gates plan
+file reads. Also wires up the new sibling package, `mcp-adversarial`,
+and runs its harness against this server as a canary in CI.
+
+### Added
+- Every string field in tool output is sanitized via
+  `mcp_adversarial.sanitize_for_model`: Unicode Cc/Cf control and
+  format chars are stripped, lines that begin with known
+  prompt-injection preambles are annotated with `[sus]` (originals
+  preserved), and long strings are truncated with a marker. Resource
+  addresses additionally go through `sanitize_address_or_marker`;
+  traversal addresses are replaced with `[invalid-address]`.
+- `safety.py` module exposing `validate_plan_path` and
+  `policy_snapshot`. Two new env-driven host knobs:
+  - `TF_REVIEW_ALLOWED_DIRS`: colon-separated directory prefix
+    allowlist for plan file reads.
+  - `TF_REVIEW_MAX_PLAN_BYTES`: max plan file size in bytes
+    (default 50 MB).
+- `get_active_config` output now includes a `host_policy` block with
+  the active values of the two new env knobs.
+- `mcp-adversarial` added as a runtime dependency (via uv workspace
+  source). `test_adversarial_canary.py` spawns the real server via
+  `python -m tf_review_mcp.server` and runs every packaged Terraform
+  fixture through the harness on each commit.
+- Repo-root `SECURITY.md` describing the trust boundary, the three
+  mitigations above, and the threat-model summary.
+
+### Changed
+- `review_plan` and `suggest_review_comments` now return structured
+  `{"error": ..., "kind": ...}` JSON on `PolicyError` or
+  `FileNotFoundError`, matching the `estimate_cost_delta` pattern.
+- `review_plan_file` raises `safety.PolicyError` on policy
+  violations; `estimate_cost_delta_from_plan` catches it and returns
+  the structured-error dict.
+
+### Notes
+- The default trust boundary for v1 stdio (developer's machine) is
+  unchanged. `TF_REVIEW_ALLOWED_DIRS` is opt-in. The size cap is
+  always active to protect against unbounded reads.
+
 ## [0.3.1] - 2026-05-21
 
 ### Added
