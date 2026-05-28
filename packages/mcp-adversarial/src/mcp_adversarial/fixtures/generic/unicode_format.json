@@ -1,0 +1,8 @@
+{
+  "id": "generic_unicode_format",
+  "category": "sanitize",
+  "args": {
+    "plan_json_path": "normal‮text-reversed​‌hidden",
+    "path": "﻿invisible‍zero-width"
+  }
+}

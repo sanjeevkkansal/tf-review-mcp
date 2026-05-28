@@ -1,0 +1,9 @@
+{
+  "id": "generic_path_traversal",
+  "category": "traversal",
+  "args": {
+    "plan_json_path": "../../../etc/passwd",
+    "path": "/etc/passwd",
+    "content": "..\\..\\windows\\system32\\config\\sam"
+  }
+}
