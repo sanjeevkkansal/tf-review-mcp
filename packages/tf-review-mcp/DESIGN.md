@@ -172,12 +172,48 @@ The server re-discovers config on each tool call. This keeps edits to
 
 ## Security and threat model
 
-| Threat | Mitigation |
+The trust boundary, mitigations, and disclosure policy live in
+[../../SECURITY.md](../../SECURITY.md). This section is the
+architectural complement.
+
+| Threat | Mitigation (as of v0.4.0) |
 |---|---|
-| Plan JSON leaks secrets | Server reads from a local path, returns only structured summaries. Raw `before`/`after` blobs are not returned by `review_plan`. |
-| Malicious plan JSON triggers parser bug | Parser uses `json.load` (no exec). Dataclass output, no eval. Fuzz-testable. |
-| MCP client tricks the server into reading arbitrary files | The path argument is constrained to what the client (and thus the developer) passes in. There is no remote attacker in the v1 threat model. For v2 HTTP mode, this becomes a real concern and needs a path allowlist. |
-| Tool prompt injection in resource names | Resource addresses are passed through as data, never executed. The model may see attacker-controlled strings in `address` fields if a malicious actor lands a PR; standard prompt-injection caveats apply, but no privileged action is gated on the model alone. |
+| Plan JSON leaks secrets to the model | Server returns structured summaries, not raw `before`/`after` blobs. The fields we *do* return (addresses, types, action lists, finding strings) go through `sanitize_for_model`. |
+| Prompt injection in resource names, tags, descriptions, user_data | All LLM-facing strings flow through `mcp_adversarial.sanitize_for_model`. Known preambles (`system:`, `Ignore previous`, ChatML role tokens) are annotated with `[sus]`. Originals are preserved; the helper does not silently rewrite. |
+| Path-traversal addresses | Resource addresses pass through `sanitize_address_or_marker`. Traversal addresses are replaced with `[invalid-address]`. |
+| Plan-path traversal / arbitrary file reads | `TF_REVIEW_ALLOWED_DIRS` prefix allowlist (opt-in, env-driven). Unset for v1 stdio default (trust boundary is the dev machine); ready to flip on for the v0.5 HTTP transport. |
+| OOM via giant plan file | `TF_REVIEW_MAX_PLAN_BYTES` (default 50 MB, env-overridable). Always active. |
+| Malicious plan triggers parser bug | Parser uses `json.load` (no exec). Dataclass output, no eval. Adversarial fixtures exercise pathological nesting, oversize fields, malformed `actions` enums; `test_adversarial_canary.py` runs them on every CI run. |
+| Unhandled exception reaches the client | All tools catch `PolicyError` / `FileNotFoundError` and return a structured `{"error": ..., "kind": ...}` JSON object. |
+| Regression of any of the above | `test_adversarial_canary.py` spawns the real server and replays every packaged fixture through the harness. |
+
+### Sanitization
+
+`mcp_adversarial.sanitize_for_model(value, max_len=1024)` (the server
+uses 1024 as the per-string cap; the library default is 512) does
+three things, in order:
+
+1. Strips Unicode general categories `Cc` and `Cf` (control and
+   format), keeping tab and newline. RLO / zero-width characters and
+   common control bytes (BEL, ESC, DEL, NUL) all go.
+2. For each line, lowercases the leading content and checks against a
+   small set of known prompt-injection preambles (`system:`,
+   `assistant:`, `Ignore previous`, `<|im_start|>`, etc.). On a match,
+   prefixes the line with `[sus]`. The original line is preserved
+   verbatim after the marker; we never silently rewrite, because
+   surprise is worse than wordiness and the model client can decide
+   how to react.
+3. Truncates the result to `max_len` characters, appending
+   `...[truncated]` when truncation happens.
+
+`sanitize_address(addr)` validates a dotted resource address and
+rejects NUL bytes, forward/back slashes, and parent-directory tokens
+(`..`). `sanitize_address_or_marker(addr)` is the never-raise variant
+used at the serialization boundary; on a rejected address it returns
+the placeholder `[invalid-address]`.
+
+Both functions live in the `mcp-adversarial` sibling package so any
+other MCP server can adopt them without depending on tf-review-mcp.
 
 ## What this is NOT
 
