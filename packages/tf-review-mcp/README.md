@@ -6,7 +6,7 @@
 
 An MCP server that reviews Terraform plans for blast radius, stateful destroys, and high-risk resource changes. Plug it into Claude Desktop, Cursor, Claude Code, or any MCP client to get structured plan review on demand.
 
-> **Status:** v0.4.1, experimental. Tool contracts may change before 1.0. Issues and PRs welcome.
+> **Status:** v0.4.2, experimental. Tool contracts may change before 1.0. Issues and PRs welcome.
 
 ![tf-review-mcp demo](docs/tf-mcp-demo.gif)
 
@@ -18,11 +18,12 @@ See [DESIGN.md](DESIGN.md) for architecture, threat model, and the existing-tool
 
 ## What it does
 
-Five tools:
+Six tools:
 
 - `review_plan(plan_json_path)` — returns a structured summary: action counts (create/update/delete/replace), high-blast-radius resource changes, stateful destroys, and diff-aware public-exposure findings.
 - `suggest_review_comments(plan_json_path)` — returns a list of `{address, severity, comment}` objects ready to drop into a PR review. Severities: `blocker | warn | info`. Includes IAM findings.
 - `review_iam_changes(plan_json_path)` — classifies IAM policy changes by privilege impact: `escalation`, `lateral`, `exfil`, `tightening`. Covers AWS, GCP, and Azure IAM-shaped resources.
+- `analyze_attack_paths(plan_json_path)` — graph search from public internet to sensitive data (RDS / S3 / KMS / Secrets / Cloud SQL / GCS / Key Vault). Surfaces paths *introduced* or *widened* by this plan. See [Attack-path analysis](#attack-path-analysis) below.
 - `estimate_cost_delta(plan_json_path)` — wraps the [Infracost](https://www.infracost.io/) CLI to return the projected monthly cost delta, top cost contributors, and threshold-based notes.
 - `get_active_config()` — returns the merged `ReviewConfig` (built-in defaults plus any `.tf-review.yml` overrides). Useful for debugging when an expected finding doesn't appear.
 
@@ -218,10 +219,63 @@ MCP server.
 See [../../SECURITY.md](../../SECURITY.md) for the trust boundary,
 threat model, and disclosure policy.
 
+## Attack-path analysis
+
+`analyze_attack_paths` builds a directed graph from the plan, searches
+for simple paths from a synthetic `internet` node to any sensitive
+resource (RDS, S3, DynamoDB, KMS, Secrets Manager, Cloud SQL, GCS,
+Key Vault, etc.), and surfaces paths that are *new* or *widened* by
+the change.
+
+Edge sources (AWS coverage is the most complete in v0.4.2):
+
+- **Internet -> ingress**: public ALB / NLB, CloudFront, API Gateway,
+  security-group rules with `0.0.0.0/0` or `::/0`.
+- **Ingress -> compute**: SG attached to EC2, Lambda VPC config, ECS
+  service network config.
+- **Compute -> principal**: EC2 instance profile, Lambda execution
+  role, ECS task role, GCE service account.
+- **Principal -> data**: IAM inline-policy `Action` resolved against
+  the resource ARN; managed-admin attachments fan out to every known
+  data node.
+
+Sample output for a plan that opens an SG to `0.0.0.0/0` on an EC2
+instance that already has `s3:GetObject *` on an existing bucket:
+
+```json
+{
+  "paths": [
+    {
+      "path": [
+        {"address": "internet", "kind": "internet"},
+        {"address": "aws_security_group.web", "kind": "sg"},
+        {"address": "aws_instance.worker", "kind": "compute"},
+        {"address": "aws_iam_instance_profile.worker-profile", "kind": "principal"},
+        {"address": "aws_s3_bucket.customer_data", "kind": "data"}
+      ],
+      "is_new": true,
+      "edges_changed_by_plan": ["internet -> aws_security_group.web"],
+      "severity": "blocker",
+      "narrative": "internet -> aws_security_group.web [sg-allows-public-ingress port=443] -> aws_instance.worker [aws_security_group.web attached to aws_instance.worker] -> aws_iam_instance_profile.worker-profile [instance profile] -> aws_s3_bucket.customer_data [grant s3:GetObject]. Edges introduced by this plan: internet -> aws_security_group.web."
+    }
+  ],
+  "summary": {"new_paths": 1, "widened_paths": 0, "preexisting_paths_unchanged": 0}
+}
+```
+
+Limits:
+
+- Path depth is capped at 8 hops and total paths at 50 by default. The
+  bounds are deliberate; longer paths exist but are noisy.
+- Cross-VPC, transit gateway, and VPC-endpoint traversal are not
+  modeled in v0.4.2. Same-VPC reachability is implicit.
+- GCP coverage in v0.4.2 is light (public firewalls, compute, sensitive
+  types). Cross-network and IAM-binding edges arrive in v0.5.
+
 ## Roadmap
 
-- `analyze_attack_paths` (graph search from public ingress to sensitive
-  data, with new-vs-widened diff).
+- Cross-VPC / transit-gateway / VPC-endpoint traversal in
+  `analyze_attack_paths`.
 - `check_policy` (run OPA/Conftest against the plan).
 - More diff-aware checks: `aws_security_group` ingress widening,
   `google_storage_bucket` `force_destroy` toggles, IAM `*` role grants.

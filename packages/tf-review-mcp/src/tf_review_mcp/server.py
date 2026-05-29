@@ -18,6 +18,7 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 from mcp_adversarial import sanitize_address_or_marker, sanitize_for_model
 
+from .attack_paths import analyze_attack_paths_from_plan
 from .config import ConfigError, ReviewConfig, default_config, load_config
 from .cost import CostSummary, estimate_cost_delta_from_plan
 from .iam import review_iam_changes_from_plan
@@ -224,6 +225,52 @@ def review_iam_changes(plan_json_path: str) -> str:
         )
     try:
         result = review_iam_changes_from_plan(plan_json_path, config=cfg)
+    except PolicyError as exc:
+        return _structured_error(exc, kind="policy")
+    except FileNotFoundError as exc:
+        return _structured_error(exc, kind="not_found")
+    return json.dumps(_sanitize_node(result.to_dict()), indent=2)
+
+
+@mcp.tool()
+def analyze_attack_paths(plan_json_path: str) -> str:
+    """Find internet-to-sensitive-data paths introduced or widened by a plan.
+
+    Builds a directed graph from the plan:
+      - Nodes: internet, ingress (LB / CloudFront / API GW), security
+        groups / firewalls, compute (EC2 / Lambda / ECS), IAM principals,
+        data stores (RDS / S3 / KMS / Secrets / etc.), network.
+      - Edges: public ingress, SG attachment, principal-to-data via
+        IAM grants.
+
+    Searches for simple paths from `internet` to any sensitive node in
+    the after-state. Diffs against the before-state and surfaces only
+    paths that are new or whose edges were changed by the plan.
+
+    Returns JSON shaped as:
+      {
+        "paths": [
+          {
+            "path": [{"address": "...", "kind": "..."}, ...],
+            "is_new": true,
+            "edges_changed_by_plan": ["src -> dst", ...],
+            "severity": "blocker | warn | info",
+            "narrative": "..."
+          }
+        ],
+        "summary": {
+          "new_paths": N,
+          "widened_paths": N,
+          "preexisting_paths_unchanged": N
+        }
+      }
+
+    Path depth and total count are bounded (defaults 8 and 50) to keep
+    output reasonable on large plans.
+    """
+    cfg = _active_config()
+    try:
+        result = analyze_attack_paths_from_plan(plan_json_path, config=cfg)
     except PolicyError as exc:
         return _structured_error(exc, kind="policy")
     except FileNotFoundError as exc:

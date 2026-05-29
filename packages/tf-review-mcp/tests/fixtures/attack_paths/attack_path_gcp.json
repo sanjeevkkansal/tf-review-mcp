@@ -1,0 +1,60 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.7.0",
+  "resource_changes": [
+    {
+      "address": "google_compute_firewall.web",
+      "type": "google_compute_firewall",
+      "name": "web",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "source_ranges": [
+            "0.0.0.0/0"
+          ],
+          "allow": [
+            {
+              "protocol": "tcp",
+              "ports": [
+                "443"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "address": "google_compute_instance.worker",
+      "type": "google_compute_instance",
+      "name": "worker",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "service_account": {
+            "email": "worker@project.iam.gserviceaccount.com"
+          }
+        }
+      }
+    },
+    {
+      "address": "google_storage_bucket.data",
+      "type": "google_storage_bucket",
+      "name": "data",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "name": "secret-data"
+        }
+      }
+    }
+  ]
+}
