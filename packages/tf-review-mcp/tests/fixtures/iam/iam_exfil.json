@@ -1,0 +1,20 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.7.0",
+  "resource_changes": [
+    {
+      "address": "aws_iam_policy.reader",
+      "type": "aws_iam_policy",
+      "name": "reader",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "policy": "{\"Version\": \"2012-10-17\", \"Statement\": [{\"Effect\": \"Allow\", \"Action\": [\"s3:GetObject\", \"secretsmanager:GetSecretValue\"], \"Resource\": \"*\"}]}"
+        }
+      }
+    }
+  ]
+}

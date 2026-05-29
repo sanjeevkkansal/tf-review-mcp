@@ -6,7 +6,7 @@
 
 An MCP server that reviews Terraform plans for blast radius, stateful destroys, and high-risk resource changes. Plug it into Claude Desktop, Cursor, Claude Code, or any MCP client to get structured plan review on demand.
 
-> **Status:** v0.4.0, experimental. Tool contracts may change before 1.0. Issues and PRs welcome.
+> **Status:** v0.4.1, experimental. Tool contracts may change before 1.0. Issues and PRs welcome.
 
 ![tf-review-mcp demo](docs/tf-mcp-demo.gif)
 
@@ -18,10 +18,11 @@ See [DESIGN.md](DESIGN.md) for architecture, threat model, and the existing-tool
 
 ## What it does
 
-Four tools:
+Five tools:
 
 - `review_plan(plan_json_path)` — returns a structured summary: action counts (create/update/delete/replace), high-blast-radius resource changes, stateful destroys, and diff-aware public-exposure findings.
-- `suggest_review_comments(plan_json_path)` — returns a list of `{address, severity, comment}` objects ready to drop into a PR review. Severities: `blocker | warn | info`.
+- `suggest_review_comments(plan_json_path)` — returns a list of `{address, severity, comment}` objects ready to drop into a PR review. Severities: `blocker | warn | info`. Includes IAM findings.
+- `review_iam_changes(plan_json_path)` — classifies IAM policy changes by privilege impact: `escalation`, `lateral`, `exfil`, `tightening`. Covers AWS, GCP, and Azure IAM-shaped resources.
 - `estimate_cost_delta(plan_json_path)` — wraps the [Infracost](https://www.infracost.io/) CLI to return the projected monthly cost delta, top cost contributors, and threshold-based notes.
 - `get_active_config()` — returns the merged `ReviewConfig` (built-in defaults plus any `.tf-review.yml` overrides). Useful for debugging when an expected finding doesn't appear.
 
@@ -30,7 +31,55 @@ What gets flagged:
 - **High-risk types** (warn). Conservative built-in list across AWS, GCP, and Azure: IAM, RDS, KMS, security groups, S3, EKS, GKE, Cloud SQL, GCS, Cloud DNS, GCE firewalls, AKS, Key Vault, etc.
 - **Stateful destroys** (blocker). RDS/Cloud SQL/DynamoDB/GCS/S3 deletes or replaces, plus `google_compute_instance` replaces (boot disk + local SSD loss).
 - **Public exposure** (blocker). Diff-aware: catches `google_compute_firewall` changes that add `0.0.0.0/0` or `::/0` to `source_ranges`.
+- **IAM privilege changes** (blocker / warn / info). Adds `iam:*`, attaching `AdministratorAccess`, granting `roles/owner`, widening `sts:AssumeRole` trust to another account: all classified and severity-ranked. See [IAM review](#iam-review) below.
 - **Cost delta** (informational). Total monthly delta plus per-resource top contributors. Notes escalate at `$100`, `$500`, and `$1000` thresholds.
+
+## IAM review
+
+`review_iam_changes` walks IAM-shaped resources across AWS
+(`aws_iam_role`, `_policy`, `_role_policy`, `_user_policy`,
+`_group_policy`, `_*_policy_attachment`), GCP (`google_*_iam_member`,
+`_iam_binding`, `_iam_policy` on projects, service accounts, buckets,
+folders, orgs), and Azure (`azurerm_role_assignment`, `_role_definition`),
+diffs before/after, and classifies each change:
+
+| Class      | What it means                                                              | Severity |
+| ---------- | -------------------------------------------------------------------------- | -------- |
+| escalation | New admin-equivalent permissions (`iam:*`, `*:*`, `roles/owner`, `AdministratorAccess`, etc.) | blocker |
+| lateral    | New cross-principal or cross-service trust (`sts:AssumeRole` widening, GCP `serviceAccount*`, Azure Managed Identity Operator) | blocker |
+| exfil      | New read/decrypt on broad resource scopes (`s3:GetObject` on `*`, `kms:Decrypt`, `secretsmanager:GetSecretValue`, `roles/storage.objectViewer` on project) | warn |
+| tightening | Privileges removed (informational, not a finding)                          | info |
+
+Sample output for a plan that adds `iam:*` on `*` to an existing policy:
+
+```json
+{
+  "iam_changes": [
+    {
+      "address": "aws_iam_policy.admin",
+      "type": "aws_iam_policy",
+      "actions": ["update"],
+      "classifications": ["escalation"],
+      "added_permissions": ["iam:* on *"],
+      "removed_permissions": [],
+      "narrative": "aws_iam_policy.admin (aws_iam_policy). adds iam:* on *.",
+      "severity": "blocker"
+    }
+  ],
+  "summary": {"escalation_count": 1, "lateral_count": 0, "exfil_count": 0, "tightening_count": 0, "total": 1}
+}
+```
+
+Patterns are extensible per team via `.tf-review.yml`:
+
+```yaml
+extra_escalation_patterns:
+  - "myorg:*"
+extra_lateral_patterns:
+  - "roles/myorg.crossAccountSetup"
+extra_exfil_patterns:
+  - "s3:GetBucketPolicy"
+```
 
 ## Install
 
@@ -171,8 +220,6 @@ threat model, and disclosure policy.
 
 ## Roadmap
 
-- `review_iam_changes` (semantic IAM-diff classification: escalation /
-  lateral / exfil-enabling).
 - `analyze_attack_paths` (graph search from public ingress to sensitive
   data, with new-vs-widened diff).
 - `check_policy` (run OPA/Conftest against the plan).

@@ -4,6 +4,58 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 uses [Semantic Versioning](https://semver.org/).
 
+## [0.4.1] - 2026-05-28
+
+New tool: `review_iam_changes`. Semantic IAM-change classifier built
+on top of v0.4.0's hardened core.
+
+### Added
+- `review_iam_changes(plan_json_path)` MCP tool. Walks IAM-shaped
+  resources across AWS, GCP, and Azure, diffs before/after, and
+  classifies each change as one or more of: `escalation`, `lateral`,
+  `exfil`, `tightening`. Returns structured findings with
+  `added_permissions`, `removed_permissions`, a deterministic
+  template-based `narrative`, and a `severity` derived from the
+  classification (escalation/lateral = blocker, exfil-only = warn,
+  tightening-only = info).
+- New `iam.py` module (pure functions, no MCP imports). Resource
+  types covered: 9 AWS (`aws_iam_role`, policy, role/user/group
+  inline + attachments), 13 GCP (project / SA / bucket / folder /
+  org IAM bindings), 2 Azure (`azurerm_role_assignment`,
+  `role_definition`).
+- Default pattern sets (`DEFAULT_ESCALATION_PATTERNS`,
+  `DEFAULT_LATERAL_PATTERNS`, `DEFAULT_EXFIL_PATTERNS`) covering
+  the well-known dangerous actions and managed-policy ARNs.
+  Extensible per team via `.tf-review.yml`:
+  - `extra_escalation_patterns`
+  - `extra_lateral_patterns`
+  - `extra_exfil_patterns`
+- `iam-review` rule id added to `KNOWN_RULES`; can be disabled via
+  `disabled_rules: [iam-review]` in YAML.
+- `suggest_review_comments` integrates IAM findings (blocker /
+  warn severities only; info-tightening is suppressed there).
+- 15 new tests in `test_iam.py` covering each classification, AWS
+  inline policies, AWS trust-policy widening, AWS managed-admin
+  attachment, GCP bindings, Azure role assignments, multi-class
+  cases, no-IAM plans, and `extra_*_patterns` extension.
+- 9 fixtures under `tests/fixtures/iam/`.
+
+### Changed
+- `ReviewConfig` gains `extra_escalation_patterns`,
+  `extra_lateral_patterns`, `extra_exfil_patterns`. The existing
+  fields and defaults are unchanged; callers that constructed
+  `ReviewConfig` directly may need to add the new (defaulted) args.
+
+### Implementation notes
+- Pattern matching is unidirectional: a granted action matches a
+  dangerous pattern when the action equals or subsumes the pattern.
+  Granting `iam:GetUser` does NOT match the `iam:*` escalation
+  pattern; granting `iam:*` does.
+- The classifier is rule-based, not LLM-based, by design. Patterns
+  are well-known and deterministic; the model's job is to read the
+  structured output and write a comment, not to do the
+  classification.
+
 ## [0.4.0] - 2026-05-28
 
 Hardening release. No tool-contract changes, but every tool now

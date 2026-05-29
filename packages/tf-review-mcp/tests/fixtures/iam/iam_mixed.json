@@ -1,0 +1,20 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.7.0",
+  "resource_changes": [
+    {
+      "address": "aws_iam_policy.mixed",
+      "type": "aws_iam_policy",
+      "name": "mixed",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "policy": "{\"Version\": \"2012-10-17\", \"Statement\": [{\"Effect\": \"Allow\", \"Action\": \"iam:*\", \"Resource\": \"*\"}, {\"Effect\": \"Allow\", \"Action\": \"kms:Decrypt\", \"Resource\": \"*\"}]}"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.7.0",
+  "resource_changes": [
+    {
+      "address": "google_project_iam_member.owner",
+      "type": "google_project_iam_member",
+      "name": "owner",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "role": "roles/owner",
+          "member": "user:bad@example.com"
+        }
+      }
+    }
+  ]
+}

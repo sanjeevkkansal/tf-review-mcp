@@ -20,6 +20,7 @@ from mcp_adversarial import sanitize_address_or_marker, sanitize_for_model
 
 from .config import ConfigError, ReviewConfig, default_config, load_config
 from .cost import CostSummary, estimate_cost_delta_from_plan
+from .iam import review_iam_changes_from_plan
 from .review import review_plan_file
 from .safety import PolicyError, policy_snapshot
 
@@ -98,8 +99,9 @@ def suggest_review_comments(plan_json_path: str) -> str:
     the structured review. Severity is one of `blocker | warn | info`.
     All strings are sanitized before serialization.
     """
+    cfg = _active_config()
     try:
-        summary = review_plan_file(plan_json_path, config=_active_config())
+        summary = review_plan_file(plan_json_path, config=cfg)
     except PolicyError as exc:
         return _structured_error(exc, kind="policy")
     except FileNotFoundError as exc:
@@ -107,6 +109,26 @@ def suggest_review_comments(plan_json_path: str) -> str:
 
     comments: list[dict[str, str]] = []
     flagged: set[str] = set()
+
+    if not cfg.is_rule_disabled("iam-review"):
+        try:
+            iam_result = review_iam_changes_from_plan(plan_json_path, config=cfg)
+        except (PolicyError, FileNotFoundError):
+            iam_result = None
+        if iam_result is not None:
+            for ic in iam_result.iam_changes:
+                if ic.severity == "info":
+                    continue
+                comments.append(
+                    {
+                        "address": ic.address,
+                        "severity": ic.severity,
+                        "comment": (
+                            f"IAM ({', '.join(ic.classifications)}): {ic.narrative}"
+                        ),
+                    }
+                )
+                flagged.add(ic.address)
 
     for c in summary.stateful_destroys:
         comments.append(
@@ -165,6 +187,48 @@ def suggest_review_comments(plan_json_path: str) -> str:
 
     sanitized = [_sanitize_node(c) for c in comments]
     return json.dumps(sanitized, indent=2)
+
+
+@mcp.tool()
+def review_iam_changes(plan_json_path: str) -> str:
+    """Classify IAM policy changes in a Terraform plan by privilege impact.
+
+    Walks IAM-shaped resources (AWS roles/policies/attachments, GCP
+    project/SA/bucket IAM bindings, Azure role assignments), diffs
+    before/after, and returns each change classified as one or more of:
+
+      - escalation: new admin-equivalent permissions (`iam:*`, `*:*`,
+                    AWS managed admin policy ARN, GCP roles/owner, etc.)
+      - lateral:    new cross-principal or cross-service trust
+                    (sts:AssumeRole widening, GCP serviceAccount* roles,
+                    Azure Managed Identity Operator)
+      - exfil:      new read/decrypt on broad resource scopes
+                    (s3:GetObject on `*`, kms:Decrypt on key wildcards,
+                    secretsmanager:GetSecretValue on `*`, GCP read roles)
+      - tightening: privileges removed (informational, not a finding)
+
+    Severity is `blocker` for escalation/lateral, `warn` for exfil-only,
+    `info` for tightening-only. Pattern sets are extensible via the
+    YAML config (`extra_escalation_patterns`, `extra_lateral_patterns`,
+    `extra_exfil_patterns`).
+    """
+    cfg = _active_config()
+    if cfg.is_rule_disabled("iam-review"):
+        return json.dumps(
+            {
+                "iam_changes": [],
+                "summary": {"disabled": True},
+                "notes": ["iam-review rule disabled by config"],
+            },
+            indent=2,
+        )
+    try:
+        result = review_iam_changes_from_plan(plan_json_path, config=cfg)
+    except PolicyError as exc:
+        return _structured_error(exc, kind="policy")
+    except FileNotFoundError as exc:
+        return _structured_error(exc, kind="not_found")
+    return json.dumps(_sanitize_node(result.to_dict()), indent=2)
 
 
 @mcp.tool()
