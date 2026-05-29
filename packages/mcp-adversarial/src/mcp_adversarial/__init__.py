@@ -9,7 +9,7 @@ from .sanitize import (
     sanitize_for_model,
 )
 
-__version__ = "0.0.0"
+__version__ = "0.1.0"
 
 __all__ = [
     "DEFAULT_MAX_LEN",

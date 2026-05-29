@@ -8,7 +8,7 @@ authors = [{ name = "Sanjeev Kumar" }]
 license = { text = "MIT" }
 dependencies = [
     "mcp>=1.2.0",
-    "mcp-adversarial",
+    "mcp-adversarial>=0.1.0,<0.2",
     "pyyaml>=6.0",
 ]
 

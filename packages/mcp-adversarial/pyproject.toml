@@ -1,11 +1,35 @@
 [project]
 name = "mcp-adversarial"
-version = "0.0.0"
-description = "Adversarial input harness for MCP servers (placeholder; real release in v0.1.0)."
+version = "0.1.0"
+description = "Adversarial input harness for MCP servers. Replay injection / oversize / traversal fixtures against any MCP server and assert it stays sane."
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [{ name = "Sanjeev Kumar" }]
 license = { text = "MIT" }
+keywords = [
+    "mcp",
+    "model-context-protocol",
+    "security",
+    "testing",
+    "adversarial",
+    "prompt-injection",
+    "harness",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Information Technology",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security",
+    "Topic :: Software Development :: Testing",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
 dependencies = []
 
 [project.optional-dependencies]
@@ -14,9 +38,27 @@ dev = [
     "ruff>=0.6",
 ]
 
+[project.urls]
+Homepage = "https://github.com/sanjeevkkansal/tf-review-mcp/tree/main/packages/mcp-adversarial"
+Repository = "https://github.com/sanjeevkkansal/tf-review-mcp"
+Issues = "https://github.com/sanjeevkkansal/tf-review-mcp/issues"
+Changelog = "https://github.com/sanjeevkkansal/tf-review-mcp/blob/main/packages/mcp-adversarial/CHANGELOG.md"
+
+[project.scripts]
+mcp-adversarial = "mcp_adversarial.runner:main"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/mcp_adversarial"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/mcp_adversarial",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "pyproject.toml",
+]

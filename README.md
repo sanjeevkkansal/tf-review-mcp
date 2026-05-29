@@ -1,5 +1,6 @@
 # tf-review-mcp / mcp-adversarial
 
+[![mcp-adversarial on PyPI](https://img.shields.io/pypi/v/mcp-adversarial.svg?label=mcp-adversarial)](https://pypi.org/project/mcp-adversarial/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](packages/tf-review-mcp/LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)](packages/tf-review-mcp/pyproject.toml)
 
